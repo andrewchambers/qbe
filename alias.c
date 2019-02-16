@@ -69,11 +69,8 @@ alias(Ref p, int sp, Ref q, int sq, int *delta, Fn *fn)
 	}
 
 	/* if one of the two is unknown
-	 * there may be aliasing unless
-	 * the other is provably local */
-	if (ap.type == AUnk && aq.type != ALoc)
-		return MayAlias;
-	if (aq.type == AUnk && ap.type != ALoc)
+	 * there may be aliasing */
+	if (ap.type == AUnk || aq.type == AUnk)
 		return MayAlias;
 
 	return NoAlias;
