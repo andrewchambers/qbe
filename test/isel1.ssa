@@ -1,0 +1,19 @@
+data $a = { w 1, w 2, w 3, w 4, }
+
+export
+function w $f(l %i, l %j) {
+@start
+	%off1 =l mul %i, 8
+	%a_i =l add $a, %off1
+	%off2 =l mul %j, 4
+	%a_ij =l add %a_i, %off2
+	%x =w loadsw %a_ij
+	ret %x
+}
+
+# >>> driver
+# extern int f(long long, long long);
+# int main() {
+# 	return !(f(0, 0) == 1 && f(0, 1) == 2 && f(1, 0) == 3 && f(1, 1) == 4);
+# }
+# <<<
