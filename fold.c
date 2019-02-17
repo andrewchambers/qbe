@@ -497,7 +497,6 @@ opfold(int op, int cls, Con *cl, Con *cr, Fn *fn)
 {
 	int nc;
 	Con c;
-	Ref r;
 
 	if ((op == Odiv || op == Oudiv
 	|| op == Orem || op == Ourem) && czero(cr, KWIDE(cls)))
@@ -508,7 +507,7 @@ opfold(int op, int cls, Con *cl, Con *cr, Fn *fn)
 	} else
 		foldflt(&c, op, cls == Kd, cl, cr);
 	if (c.type == CBits)
-		r = getcon(c.bits.i, fn), nc = r.val;
+		nc = getcon(c.bits.i, fn).val;
 	else {
 		nc = fn->ncon;
 		vgrow(&fn->con, ++fn->ncon);
