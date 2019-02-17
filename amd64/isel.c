@@ -551,8 +551,11 @@ amatch(Addr *a, Ref r, ANum *ai, Fn *fn, int top)
 	case 2: /* constants */
 	case 5: /* o + s * i */
 	case 6: /* o + b */
-	case 7: /* o + b + s * i */
 		amatch(a, ar, ai, fn, 0);
+		amatch(a, al, ai, fn, 0);
+		break;
+	case 7: /* o + b + s * i */
+		a->base = ar;
 		amatch(a, al, ai, fn, 0);
 		break;
 	default:
