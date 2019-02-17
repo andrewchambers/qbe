@@ -1,7 +1,7 @@
 #include "all.h"
 
 Blk *
-blknew()
+blknew(void)
 {
 	static Blk z;
 	Blk *b;

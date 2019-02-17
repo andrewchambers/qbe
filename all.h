@@ -69,8 +69,8 @@ struct BSet {
 };
 
 struct Ref {
-	uint type:3;
-	uint val:29;
+	uint type/*:3*/;
+	uint val/*:29*/;
 };
 
 enum {
@@ -196,8 +196,8 @@ struct Op {
 };
 
 struct Ins {
-	uint op:30;
-	uint cls:2;
+	uint op/*:30*/;
+	uint cls/*:2*/;
 	Ref to;
 	Ref arg[2];
 };

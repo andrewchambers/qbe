@@ -24,8 +24,8 @@ struct Slice {
 };
 
 struct Insert {
-	uint isphi:1;
-	uint num:31;
+	uint isphi/*:1*/;
+	uint num/*:31*/;
 	uint bid;
 	uint off;
 	union {

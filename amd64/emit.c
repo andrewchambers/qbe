@@ -144,18 +144,17 @@ static char *rname[][4] = {
 static int
 slot(int s, Fn *fn)
 {
-	struct { int i:29; } x;
-
-	/* sign extend s using a bitfield */
-	x.i = s;
-	assert(x.i <= fn->slot);
+	/* sign extend */
+	if (s & 1<<28)
+		s |= ~((1<<29) - 1);
+	assert(s <= fn->slot);
 	/* specific to NAlign == 3 */
-	if (x.i < 0)
-		return -4 * x.i;
+	if (s < 0)
+		return -4 * s;
 	else if (fn->vararg)
-		return -176 + -4 * (fn->slot - x.i);
+		return -176 + -4 * (fn->slot - s);
 	else
-		return -4 * (fn->slot - x.i);
+		return -4 * (fn->slot - s);
 }
 
 static void
