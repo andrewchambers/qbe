@@ -1,3 +1,6 @@
+# checks that phi arguments are correctly
+# handled in alias analysis
+
 export
 function w $f(w %cond) {
 @start
