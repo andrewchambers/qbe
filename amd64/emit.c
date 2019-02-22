@@ -144,9 +144,6 @@ static char *rname[][4] = {
 static int
 slot(int s, Fn *fn)
 {
-	/* sign extend */
-	if (s & 1<<28)
-		s |= ~((1<<29) - 1);
 	assert(s <= fn->slot);
 	/* specific to NAlign == 3 */
 	if (s < 0)
