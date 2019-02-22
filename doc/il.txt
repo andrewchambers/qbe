@@ -225,7 +225,7 @@ using the `export` keyword.
 Aggregate type definitions start with the `type` keyword.
 They have file scope, but types must be defined before being
 referenced.  The inner structure of a type is expressed by a
-comma-separated list of <@ Types> enclosed in curly braces.
+comma-separated list of types enclosed in curly braces.
 
     type :fourfloats = { s, s, d, d }
 
