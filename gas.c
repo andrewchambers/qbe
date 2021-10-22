@@ -3,6 +3,25 @@
 
 char *gasloc, *gassym;
 
+void gasemittlasm(char *s, FILE *f) {
+	int esc;
+	fputs("/* begin inline asm */\n", f);
+	esc = 0;
+	s += s[1] == '\n' ? 2 : 1;
+	while (s[1]) {
+		if (!esc && *s == '\\') {
+			esc = 1;
+			continue;
+		}
+		if (esc && *s != '"' && *s != '\\')
+			fputc('\\', f);
+		fputc(*s, f);
+		esc = 0;
+		s++;
+	}
+	fputs("/* end inline asm */\n", f);
+}
+
 void
 gasemitdat(Dat *d, FILE *f)
 {

@@ -19,6 +19,7 @@
       * <@ Aggregate Types >
       * <@ Data >
       * <@ Functions >
+      * <@ Inline Assembly >
   5. <@ Control >
       * <@ Blocks >
       * <@ Jumps >
@@ -383,6 +384,20 @@ is provided in the call instructions.
 
 The syntax and semantics for the body of functions
 are described in the <@ Control > section.
+
+~ Inline Assembly
+~~~~~~~~~~~~~~~~~
+
+    `bnf
+    DATADEF :=
+        'asm'
+      |  '"' ... '"'
+
+Top level inline assembly is copied verbatim into the output with the
+following exceptions:
+
+  * A single leading newline will stripped if present.
+  * '\' followed by '"' or '\' will omit the '\'.
 
 - 5. Control
 ------------

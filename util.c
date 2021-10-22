@@ -43,7 +43,6 @@ uint32_t
 hash(char *s)
 {
 	uint32_t h;
-
 	for (h=0; *s; ++s)
 		h = *s + 17*h;
 	return h;

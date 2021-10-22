@@ -458,7 +458,7 @@ bshas(BSet *bs, uint elt)
 
 /* parse.c */
 extern Op optab[NOp];
-void parse(FILE *, char *, void (Dat *), void (Fn *));
+void parse(FILE *, char *, void (Dat *), void (Fn *), void (char *));
 void printfn(Fn *, FILE *);
 void printref(Ref, Fn *, FILE *);
 void err(char *, ...) __attribute__((noreturn));
@@ -516,6 +516,7 @@ void rega(Fn *);
 /* gas.c */
 extern char *gasloc;
 extern char *gassym;
+void gasemittlasm(char *, FILE *);
 void gasemitdat(Dat *, FILE *);
 int gasstash(void *, int);
 void gasemitfin(FILE *);

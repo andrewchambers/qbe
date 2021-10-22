@@ -39,6 +39,12 @@ static FILE *outf;
 static int dbg;
 
 static void
+tlasm(char *s)
+{
+	gasemittlasm(s, outf);
+}
+
+static void
 data(Dat *d)
 {
 	if (dbg)
@@ -190,7 +196,7 @@ main(int ac, char *av[])
 				exit(1);
 			}
 		}
-		parse(inf, f, data, func);
+		parse(inf, f, data, func, tlasm);
 	} while (++optind < ac);
 
 	if (!dbg) {

@@ -37,6 +37,7 @@ enum {
 	Tjmp,
 	Tjnz,
 	Tret,
+	Tasm,
 	Texport,
 	Tfunc,
 	Ttype,
@@ -87,6 +88,7 @@ static char *kwmap[Ntok] = {
 	[Tjmp] = "jmp",
 	[Tjnz] = "jnz",
 	[Tret] = "ret",
+	[Tasm] = "asm",
 	[Texport] = "export",
 	[Tfunc] = "function",
 	[Ttype] = "type",
@@ -109,7 +111,7 @@ enum {
 	TMask = 16383, /* for temps hash */
 	BMask = 8191, /* for blocks hash */
 
-	K = 3233235, /* found using tools/lexh.c */
+	K = 4331239, /* found using tools/lexh.c */
 	M = 23,
 };
 
@@ -785,6 +787,13 @@ typecheck(Fn *fn)
 	}
 }
 
+static char *
+parsetlasm(void) {
+	if (nextnl() != Tstr)
+		err("string literal expected");
+	return tokval.str;
+}
+
 static Fn *
 parsefn(int export)
 {
@@ -1065,7 +1074,7 @@ Done:
 }
 
 void
-parse(FILE *f, char *path, void data(Dat *), void func(Fn *))
+parse(FILE *f, char *path, void data(Dat *), void func(Fn *), void tlasm(char *))
 {
 	int t, export;
 
@@ -1081,6 +1090,9 @@ parse(FILE *f, char *path, void data(Dat *), void func(Fn *))
 		switch (nextnl()) {
 		default:
 			err("top-level definition expected");
+		case Tasm:
+			tlasm(parsetlasm());
+			break;
 		case Texport:
 			export = 1;
 			t = nextnl();
