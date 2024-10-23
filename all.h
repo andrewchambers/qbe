@@ -62,6 +62,7 @@ struct Target {
 	void (*emitfin)(FILE *);
 	char asloc[4];
 	char assym[4];
+	uint cansel:1;
 };
 
 #define BIT(n) ((bits)1 << (n))
@@ -183,6 +184,8 @@ enum {
 	Oalloc1 = Oalloc16,
 	Oflag = Oflagieq,
 	Oflag1 = Oflagfuo,
+	Oxsel = Oxselieq,
+	Oxsel1 = Oxselfuo,
 	NPubOp = Onop,
 	Jjf = Jjfieq,
 	Jjf1 = Jjffuo,
@@ -199,6 +202,7 @@ enum {
 #define isparbh(o) INRANGE(o, Oparsb, Oparuh)
 #define isargbh(o) INRANGE(o, Oargsb, Oarguh)
 #define isretbh(j) INRANGE(j, Jretsb, Jretuh)
+#define isxsel(o) INRANGE(o, Oxsel, Oxsel1)
 
 enum {
 	Kx = -1, /* "top" class (see usecheck() and clsmerge()) */
@@ -482,7 +486,7 @@ void *vnew(ulong, size_t, Pool);
 void vfree(void *);
 void vgrow(void *, ulong);
 void addins(Ins **, uint *, Ins *);
-void addbins(Blk *, Ins **, uint *);
+void addbins(Ins **, uint *, Blk *);
 void strf(char[NString], char *, ...);
 uint32_t intern(char *);
 char *str(uint32_t);
@@ -555,6 +559,7 @@ void fillloop(Fn *);
 void simpljmp(Fn *);
 int reaches(Fn *, Blk *, Blk *);
 int reachesnotvia(Fn *, Blk *, Blk *, Blk *);
+int ifgraph(Blk *, Blk **, Blk **, Blk **);
 
 /* mem.c */
 void promote(Fn *);
@@ -594,6 +599,9 @@ void gvn(Fn *);
 /* gcm.c */
 int pinned(Ins *);
 void gcm(Fn *);
+
+/* ifopt.c */
+void ifconvert(Fn *fn);
 
 /* simpl.c */
 void simpl(Fn *);
