@@ -444,7 +444,7 @@ rv64_emitfn(Fn *fn, FILE *f)
 	static int id0;
 	int lbl, neg, off, frame, *pr, r;
 	Blk *b, *s;
-	Ins *i;
+	Ins *i, ii;
 
 	emitfnlnk(fn->name, &fn->lnk, f);
 
@@ -548,6 +548,11 @@ rv64_emitfn(Fn *fn, FILE *f)
 				b->s1 = b->s2;
 				b->s2 = s;
 				neg = 1;
+			}
+			if (rtype(b->jmp.arg) == RSlot) {
+				ii.arg[0] = b->jmp.arg;
+				emitf("lw t6, %M0", &ii, fn, f);
+				b->jmp.arg = TMP(T6);
 			}
 			assert(isreg(b->jmp.arg));
 			fprintf(f,
