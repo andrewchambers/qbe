@@ -109,6 +109,10 @@ static struct {
 	{ NOp, 0, 0 }
 };
 
+enum {
+	V31 = 0x1fffffff,  /* local name for V31 */
+};
+
 static char *
 rname(int r, int k)
 {
@@ -131,6 +135,12 @@ rname(int r, int k)
 		case Ks: sprintf(buf, "s%d", r-V0); break;
 		case Kx:
 		case Kd: sprintf(buf, "d%d", r-V0); break;
+		}
+	else if (r == V31)
+		switch (k) {
+		default: die("invalid class");
+		case Ks: sprintf(buf, "s31"); break;
+		case Kd: sprintf(buf, "d31"); break;
 		}
 	else
 		die("invalid register");
@@ -172,7 +182,7 @@ emitf(char *s, Ins *i, E *e)
 			if (c == ' ' && !sp) {
 				fputc('\t', e->f);
 				sp = 1;
-			} else if ( !c) {
+			} else if (!c) {
 				fputc('\n', e->f);
 				return;
 			} else
@@ -197,12 +207,12 @@ emitf(char *s, Ins *i, E *e)
 			if (KBASE(k) == 0)
 				fputs(rname(IP1, k), e->f);
 			else
-				fputs(k==Ks ? "s31" : "d31", e->f);
+				fputs(rname(V31, k), e->f);
 			break;
 		case '=':
 		case '0':
 			r = c == '=' ? i->to : i->arg[0];
-			assert(isreg(r));
+			assert(isreg(r) || req(r, TMP(V31)));
 			fputs(rname(r.val, k), e->f);
 			break;
 		case '1':
@@ -335,8 +345,8 @@ loadcon(Con *c, int r, int k, E *e)
 
 static void emitins(Ins *, E *);
 
-static void
-fixarg(Ref *pr, int sz, E *e)
+static int
+fixarg(Ref *pr, int sz, int t, E *e)
 {
 	Ins *i;
 	Ref r;
@@ -346,11 +356,14 @@ fixarg(Ref *pr, int sz, E *e)
 	if (rtype(r) == RSlot) {
 		s = slot(r, e);
 		if (s > sz * 4095u) {
-			i = &(Ins){Oaddr, Kl, TMP(IP1), {r}};
+			if (t < 0)
+				return 1;
+			i = &(Ins){Oaddr, Kl, TMP(t), {r}};
 			emitins(i, e);
-			*pr = TMP(IP1);
+			*pr = TMP(t);
 		}
 	}
+	return 0;
 }
 
 static void
@@ -358,16 +371,28 @@ emitins(Ins *i, E *e)
 {
 	char *l, *p, *rn;
 	uint64_t s;
-	int o;
+	int o, t;
 	Ref r;
 	Con *c;
 
 	switch (i->op) {
 	default:
 		if (isload(i->op))
-			fixarg(&i->arg[0], loadsz(i), e);
-		if (isstore(i->op))
-			fixarg(&i->arg[1], storesz(i), e);
+			fixarg(&i->arg[0], loadsz(i), IP1, e);
+		if (isstore(i->op)) {
+			t = T.apple ? -1 : R18;
+			if (fixarg(&i->arg[1], storesz(i), t, e)) {
+				if (req(i->arg[0], TMP(IP1))) {
+					fprintf(e->f,
+						"\tfmov\t%c31, %c17\n",
+						"ds"[i->cls == Kw],
+						"xw"[i->cls == Kw]);
+					i->arg[0] = TMP(V31);
+					i->op = Ostores + (i->cls-Kw);
+				}
+				fixarg(&i->arg[1], storesz(i), IP1, e);
+			}
+		}
 	Table:
 		/* most instructions are just pulled out of
 		 * the table omap[], some special cases are
