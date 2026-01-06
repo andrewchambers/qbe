@@ -61,11 +61,14 @@ emitfnlnk(char *n, Lnk *l, FILE *f)
 void
 emitdat(Dat *d, FILE *f)
 {
-	static char *dtoa[] = {
-		[DB] = "\t.byte",
-		[DH] = "\t.short",
-		[DW] = "\t.int",
-		[DL] = "\t.quad"
+	static struct {
+		char decl[8];
+		int64_t mask;
+	} di[] = {
+		[DB] = {"\t.byte", 0xffL},
+		[DH] = {"\t.short", 0xffffL},
+		[DW] = {"\t.int", 0xffffffffL},
+		[DL] = {"\t.quad", -1L},
 	};
 	static int64_t zero;
 	char *p;
@@ -111,12 +114,13 @@ emitdat(Dat *d, FILE *f)
 		else if (d->isref) {
 			p = d->u.ref.name[0] == '"' ? "" : T.assym;
 			fprintf(f, "%s %s%s%+"PRId64"\n",
-				dtoa[d->type], p, d->u.ref.name,
+				di[d->type].decl, p, d->u.ref.name,
 				d->u.ref.off);
 		}
 		else {
 			fprintf(f, "%s %"PRId64"\n",
-				dtoa[d->type], d->u.num);
+				di[d->type].decl,
+				d->u.num & di[d->type].mask);
 		}
 		break;
 	}
