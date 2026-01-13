@@ -16,19 +16,22 @@ newblk()
 static void
 fixphis(Fn *f)
 {
-	Blk *b;
+	Blk *b, *bp;
 	Phi *p;
 	uint n, n0;
 
 	for (b=f->start; b; b=b->link) {
 		assert(b->id < f->nblk);
 		for (p=b->phi; p; p=p->link) {
-			for (n=n0=0; n<p->narg; n++)
-				if (p->blk[n]->id != -1u) {
-					p->blk[n0] = p->blk[n];
+			for (n=n0=0; n<p->narg; n++) {
+				bp = p->blk[n];
+				if (bp->id != -1u)
+				if (bp->s1 == b || bp->s2 == b) {
+					p->blk[n0] = bp;
 					p->arg[n0] = p->arg[n];
 					n0++;
 				}
+			}
 			assert(n0 > 0);
 			p->narg = n0;
 		}
