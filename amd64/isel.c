@@ -429,25 +429,8 @@ sel(Ins i, Num *tn, Fn *fn)
 	case Oexts:
 	case Otruncd:
 	case Ocast:
-	case Oxselieq:
-	case Oxseline:
-	case Oxselisge:
-	case Oxselisgt:
-	case Oxselisle:
-	case Oxselislt:
-	case Oxseliuge:
-	case Oxseliugt:
-	case Oxseliule:
-	case Oxseliult:
-	case Oxselfeq:
-	case Oxselfge:
-	case Oxselfgt:
-	case Oxselfle:
-	case Oxselflt:
-	case Oxselfne:
-	case Oxselfo:
-	case Oxselfuo:
-	case_OExt:
+	case_Oxsel:
+	case_Oext:
 Emit:
 		emiti(i);
 		i1 = curi; /* fixarg() can change curi */
@@ -461,7 +444,9 @@ Emit:
 		break;
 	default:
 		if (isext(i.op))
-			goto case_OExt;
+			goto case_Oext;
+		if (isxsel(i.op))
+			goto case_Oxsel;
 		if (isload(i.op))
 			goto case_Oload;
 		if (iscmp(i.op, &kc, &x)) {
@@ -518,13 +503,13 @@ flagi(Ins *i0, Ins *i)
 static Ins*
 selsel(Fn *fn, Blk *b, Ins *i, Num *tn)
 {
-	Ref r, cr0, cr1;
+	Ref r, cr[2];
 	int c, k, swap, gencmp, gencpy;
 	Ins *isel0, *isel1, *fi;
 	Tmp *t;
 
 	assert(i->op == Osel1);
-	for (isel0 = i; b->ins < isel0; isel0--) {
+	for (isel0=i; b->ins<isel0; isel0--) {
 		if (isel0->op == Osel0)
 			break;
 		assert(isel0->op == Osel1);
@@ -534,29 +519,38 @@ selsel(Fn *fn, Blk *b, Ins *i, Num *tn)
 	assert(rtype(r) == RTmp);
 	t = &fn->tmp[r.val];
 	fi = flagi(b->ins, isel0);
-	cr0 = cr1 = R;
+	cr[0] = cr[1] = R;
 	gencmp = gencpy = swap = 0;
 	k = Kw;
 	c = Cine;
 	if (!fi || !req(fi->to, r)) {
 		gencmp = 1;
-		cr0 = r;
-		cr1 = CON_Z;
-	} else if (iscmp(fi->op, &k, &c)
-		   && c != NCmpI+Cfeq /* see sel() */
-		   && c != NCmpI+Cfne) {
+		cr[0] = r;
+		cr[1] = CON_Z;
+	}
+	else if (iscmp(fi->op, &k, &c)) {
+		if (c == NCmpI+Cfeq
+		|| c == NCmpI+Cfne) {
+			/* these are selected as 'and'
+			 * or 'or', so we check their
+			 * result with Cine
+			 */
+			c = Cine;
+			goto Other;
+		}
 		swap = cmpswap(fi->arg, c);
 		if (swap)
 			c = cmpop(c);
 		if (t->nuse == 1) {
 			gencmp = 1;
-			cr0 = fi->arg[0];
-			cr1 = fi->arg[1];
+			cr[0] = fi->arg[0];
+			cr[1] = fi->arg[1];
 			*fi = (Ins){.op = Onop};
 		}
-	} else if (fi->op == Oand && t->nuse == 1
-		&& (rtype(fi->arg[0]) == RTmp ||
-		    rtype(fi->arg[1]) == RTmp)) {
+	}
+	else if (fi->op == Oand && t->nuse == 1
+	     && (rtype(fi->arg[0]) == RTmp ||
+	         rtype(fi->arg[1]) == RTmp)) {
 		fi->op = Oxtest;
 		fi->to = R;
 		if (rtype(fi->arg[1]) == RCon) {
@@ -564,7 +558,9 @@ selsel(Fn *fn, Blk *b, Ins *i, Num *tn)
 			fi->arg[1] = fi->arg[0];
 			fi->arg[0] = r;
 		}
-	} else {
+	}
+	else {
+	Other:
 		/* since flags are not tracked in liveness,
 		 * the result of the flag-setting instruction
 		 * has to be marked as live
@@ -573,18 +569,15 @@ selsel(Fn *fn, Blk *b, Ins *i, Num *tn)
 			gencpy = 1;
 	}
 	/* generate conditional moves */
-	for (isel1 = i; isel0 < isel1; --isel1) {
-		isel1->op = Oxselieq+c;
+	for (isel1=i; isel0<isel1; --isel1) {
+		isel1->op = Oxsel+c;
 		sel(*isel1, tn, fn);
 	}
-	if (gencmp) {
-		assert(!gencpy);
-		selcmp((Ref[2]){cr0, cr1}, k, swap, fn);
-	}
-	if (gencpy) {
-		assert(!gencmp);
+	assert(!gencmp || !gencpy);
+	if (gencmp)
+		selcmp(cr, k, swap, fn);
+	if (gencpy)
 		emit(Ocopy, Kw, R, r, R);
-	}
 	*isel0 = (Ins){.op = Onop};
 	return isel0;
 }
@@ -618,7 +611,7 @@ seljmp(Blk *b, Fn *fn)
 		b->jmp.type = Jjf + Cine;
 	}
 	else if (iscmp(fi->op, &k, &c)
-	     && c != NCmpI+Cfeq /* see sel() */
+	     && c != NCmpI+Cfeq /* see sel(), selsel() */
 	     && c != NCmpI+Cfne) {
 		swap = cmpswap(fi->arg, c);
 		if (swap)

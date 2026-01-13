@@ -12,24 +12,22 @@ struct E {
 };
 
 #define CMP(X) \
-	X(Ciule,      "be") \
-	X(Ciult,      "b")  \
-	X(Cisle,      "le") \
-	X(Cislt,      "l")  \
-	X(Cisgt,      "g")  \
-	X(Cisge,      "ge") \
-	X(Ciugt,      "a")  \
-	X(Ciuge,      "ae") \
-	X(Cieq,       "z")  \
-	X(Cine,       "nz") \
-	X(NCmpI+Cfle, "be") \
-	X(NCmpI+Cflt, "b")  \
-	X(NCmpI+Cfgt, "a")  \
-	X(NCmpI+Cfge, "ae") \
-	X(NCmpI+Cfeq, "z")  \
-	X(NCmpI+Cfne, "nz") \
-	X(NCmpI+Cfo,  "np") \
-	X(NCmpI+Cfuo, "p")
+	X(Ciule,      "be", "a") \
+	X(Ciult,      "b", "ae") \
+	X(Cisle,      "le", "g") \
+	X(Cislt,      "l", "ge") \
+	X(Cisgt,      "g", "le") \
+	X(Cisge,      "ge", "l") \
+	X(Ciugt,      "a", "be") \
+	X(Ciuge,      "ae", "b") \
+	X(Cieq,       "z", "nz") \
+	X(Cine,       "nz", "z") \
+	X(NCmpI+Cfle, "be", "a") \
+	X(NCmpI+Cflt, "b", "ae") \
+	X(NCmpI+Cfgt, "a", "be") \
+	X(NCmpI+Cfge, "ae", "b") \
+	X(NCmpI+Cfo,  "np", "p") \
+	X(NCmpI+Cfuo, "p", "np")
 
 enum {
 	SLong = 0,
@@ -72,63 +70,75 @@ static struct {
 	short cls;
 	char *fmt;
 } omap[] = {
-	{ Oadd,    Ka, "+add%k %1, %=" },
-	{ Osub,    Ka, "-sub%k %1, %=" },
-	{ Oand,    Ki, "+and%k %1, %=" },
-	{ Oor,     Ki, "+or%k %1, %=" },
-	{ Oxor,    Ki, "+xor%k %1, %=" },
-	{ Osar,    Ki, "-sar%k %B1, %=" },
-	{ Oshr,    Ki, "-shr%k %B1, %=" },
-	{ Oshl,    Ki, "-shl%k %B1, %=" },
-	{ Omul,    Ki, "+imul%k %1, %=" },
-	{ Omul,    Ks, "+mulss %1, %=" },
-	{ Omul,    Kd, "+mulsd %1, %=" },
-	{ Odiv,    Ka, "-div%k %1, %=" },
-	{ Ostorel, Ka, "movq %L0, %M1" },
-	{ Ostorew, Ka, "movl %W0, %M1" },
-	{ Ostoreh, Ka, "movw %H0, %M1" },
-	{ Ostoreb, Ka, "movb %B0, %M1" },
-	{ Ostores, Ka, "movss %S0, %M1" },
-	{ Ostored, Ka, "movsd %D0, %M1" },
-	{ Oload,   Ka, "mov%k %M0, %=" },
-	{ Oloadsw, Kl, "movslq %M0, %L=" },
-	{ Oloadsw, Kw, "movl %M0, %W=" },
-	{ Oloaduw, Ki, "movl %M0, %W=" },
-	{ Oloadsh, Ki, "movsw%k %M0, %=" },
-	{ Oloaduh, Ki, "movzw%k %M0, %=" },
-	{ Oloadsb, Ki, "movsb%k %M0, %=" },
-	{ Oloadub, Ki, "movzb%k %M0, %=" },
-	{ Oextsw,  Kl, "movslq %W0, %L=" },
-	{ Oextuw,  Kl, "movl %W0, %W=" },
-	{ Oextsh,  Ki, "movsw%k %H0, %=" },
-	{ Oextuh,  Ki, "movzw%k %H0, %=" },
-	{ Oextsb,  Ki, "movsb%k %B0, %=" },
-	{ Oextub,  Ki, "movzb%k %B0, %=" },
+	{ Oadd,     Ka, "+add%k %1, %=" },
+	{ Osub,     Ka, "-sub%k %1, %=" },
+	{ Oand,     Ki, "+and%k %1, %=" },
+	{ Oor,      Ki, "+or%k %1, %=" },
+	{ Oxor,     Ki, "+xor%k %1, %=" },
+	{ Osar,     Ki, "-sar%k %B1, %=" },
+	{ Oshr,     Ki, "-shr%k %B1, %=" },
+	{ Oshl,     Ki, "-shl%k %B1, %=" },
+	{ Omul,     Ki, "+imul%k %1, %=" },
+	{ Omul,     Ks, "+mulss %1, %=" },
+	{ Omul,     Kd, "+mulsd %1, %=" },
+	{ Odiv,     Ka, "-div%k %1, %=" },
+	{ Ostorel,  Ka, "movq %L0, %M1" },
+	{ Ostorew,  Ka, "movl %W0, %M1" },
+	{ Ostoreh,  Ka, "movw %H0, %M1" },
+	{ Ostoreb,  Ka, "movb %B0, %M1" },
+	{ Ostores,  Ka, "movss %S0, %M1" },
+	{ Ostored,  Ka, "movsd %D0, %M1" },
+	{ Oload,    Ka, "mov%k %M0, %=" },
+	{ Oloadsw,  Kl, "movslq %M0, %L=" },
+	{ Oloadsw,  Kw, "movl %M0, %W=" },
+	{ Oloaduw,  Ki, "movl %M0, %W=" },
+	{ Oloadsh,  Ki, "movsw%k %M0, %=" },
+	{ Oloaduh,  Ki, "movzw%k %M0, %=" },
+	{ Oloadsb,  Ki, "movsb%k %M0, %=" },
+	{ Oloadub,  Ki, "movzb%k %M0, %=" },
+	{ Oextsw,   Kl, "movslq %W0, %L=" },
+	{ Oextuw,   Kl, "movl %W0, %W=" },
+	{ Oextsh,   Ki, "movsw%k %H0, %=" },
+	{ Oextuh,   Ki, "movzw%k %H0, %=" },
+	{ Oextsb,   Ki, "movsb%k %B0, %=" },
+	{ Oextub,   Ki, "movzb%k %B0, %=" },
 
-	{ Oexts,   Kd, "cvtss2sd %0, %=" },
-	{ Otruncd, Ks, "cvtsd2ss %0, %=" },
-	{ Ostosi,  Ki, "cvttss2si%k %0, %=" },
-	{ Odtosi,  Ki, "cvttsd2si%k %0, %=" },
-	{ Oswtof,  Ka, "cvtsi2%k %W0, %=" },
-	{ Osltof,  Ka, "cvtsi2%k %L0, %=" },
-	{ Ocast,   Ki, "movq %D0, %L=" },
-	{ Ocast,   Ka, "movq %L0, %D=" },
+	{ Oexts,    Kd, "cvtss2sd %0, %=" },
+	{ Otruncd,  Ks, "cvtsd2ss %0, %=" },
+	{ Ostosi,   Ki, "cvttss2si%k %0, %=" },
+	{ Odtosi,   Ki, "cvttsd2si%k %0, %=" },
+	{ Oswtof,   Ka, "cvtsi2%k %W0, %=" },
+	{ Osltof,   Ka, "cvtsi2%k %L0, %=" },
+	{ Ocast,    Ki, "movq %D0, %L=" },
+	{ Ocast,    Ka, "movq %L0, %D=" },
 
-	{ Oaddr,   Ki, "lea%k %M0, %=" },
-	{ Oswap,   Ki, "xchg%k %0, %1" },
-	{ Osign,   Kl, "cqto" },
-	{ Osign,   Kw, "cltd" },
-	{ Oxdiv,   Ki, "div%k %0" },
-	{ Oxidiv,  Ki, "idiv%k %0" },
-	{ Oxcmp,   Ks, "ucomiss %S0, %S1" },
-	{ Oxcmp,   Kd, "ucomisd %D0, %D1" },
-	{ Oxcmp,   Ki, "cmp%k %0, %1" },
-	{ Oxtest,  Ki, "test%k %0, %1" },
-#define X(c, s) \
-	{ Oflag+c, Ki, "set" s " %B=\n\tmovzb%k %B=, %=" },
+	{ Oaddr,    Ki, "lea%k %M0, %=" },
+	{ Oswap,    Ki, "xchg%k %0, %1" },
+	{ Osign,    Kl, "cqto" },
+	{ Osign,    Kw, "cltd" },
+	{ Oxdiv,    Ki, "div%k %0" },
+	{ Oxidiv,   Ki, "idiv%k %0" },
+	{ Oxcmp,    Ks, "ucomiss %S0, %S1" },
+	{ Oxcmp,    Kd, "ucomisd %D0, %D1" },
+	{ Oxcmp,    Ki, "cmp%k %0, %1" },
+	{ Oxtest,   Ki, "test%k %0, %1" },
+#define X(c, s, _) \
+	{ Oflag+c,  Ki, "set" s " %B=\n\tmovzb%k %B=, %=" },
 	CMP(X)
 #undef X
+	{ Oflagfeq, Ki, "setz %B=\n\tmovzb%k %B=, %=" },
+	{ Oflagfne, Ki, "setnz %B=\n\tmovzb%k %B=, %=" },
 	{ NOp, 0, 0 }
+};
+
+static char cmov[][2][16] = {
+#define X(c, s0, s1) \
+	[c] = { \
+		"cmov" s0 " %0, %=", \
+		"cmov" s1 " %1, %=", \
+	},
+	CMP(X)
+#undef X
 };
 
 static char *rname[][4] = {
@@ -401,6 +411,8 @@ emitins(Ins i, E *e)
 
 	switch (i.op) {
 	default:
+		if (isxsel(i.op))
+			goto case_Oxsel;
 	Table:
 		/* most instructions are just pulled out of
 		 * the table omap[], some special cases are
@@ -576,43 +588,15 @@ emitins(Ins i, E *e)
 	case Odbgloc:
 		emitdbgloc(i.arg[0].val, i.arg[1].val, e->f);
 		break;
-	case Oxselieq:
-	case Oxseline:
-	case Oxselisge:
-	case Oxselisgt:
-	case Oxselisle:
-	case Oxselislt:
-	case Oxseliuge:
-	case Oxseliugt:
-	case Oxseliule:
-	case Oxseliult:
-	case Oxselfeq:
-	case Oxselfge:
-	case Oxselfgt:
-	case Oxselfle:
-	case Oxselflt:
-	case Oxselfne:
-	case Oxselfo:
-	case Oxselfuo:
-	{
-		// TODO - how to do this "properly"?
-		static char *F0[] = {
-			 "z", "nz", "ge",  "g", "le",  "l", "ae",  "a", "be",  "b",
-			"nz", "ae",  "a", "be",  "b",  "nz",  "p", "np"
-		};
-		static char *F1[] = {
-			"nz", "z",  "l", "le",  "g", "ge",  "b", "be",  "a", "ae",
-			 "z", "b", "be",  "a", "ae",  "z", "p",  "np"
-		};
-		char ins[16];
-		sprintf(ins, "cmov%s %%1, %%=", F1[i.op-Oxselieq]);
+	case_Oxsel:
 		if (req(i.to, i.arg[1]))
-			sprintf(ins, "cmov%s %%0, %%=", F0[i.op-Oxselieq]);
-		else if (!req(i.to, i.arg[0]))
-			emitf("mov %0, %=", &i, e);
-		emitf(ins, &i, e);
+			emitf(cmov[i.op-Oxsel][0], &i, e);
+		else {
+			if (!req(i.to, i.arg[0]))
+				emitf("mov %0, %=", &i, e);
+			emitf(cmov[i.op-Oxsel][1], &i, e);
+		}
 		break;
-	}
 	}
 }
 
@@ -641,7 +625,7 @@ void
 amd64_emitfn(Fn *fn, FILE *f)
 {
 	static char *ctoa[] = {
-	#define X(c, s) [c] = s,
+	#define X(c, s, _) [c] = s,
 		CMP(X)
 	#undef X
 	};
