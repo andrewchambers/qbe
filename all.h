@@ -560,6 +560,7 @@ void simpljmp(Fn *);
 int reaches(Fn *, Blk *, Blk *);
 int reachesnotvia(Fn *, Blk *, Blk *, Blk *);
 int ifgraph(Blk *, Blk **, Blk **, Blk **);
+void simplcfg(Fn *);
 
 /* mem.c */
 void promote(Fn *);

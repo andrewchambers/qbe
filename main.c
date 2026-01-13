@@ -77,6 +77,7 @@ func(Fn *fn)
 	ssacheck(fn);
 	gvn(fn);
 	fillcfg(fn);
+	simplcfg(fn);
 	filluse(fn);
 	filldom(fn);
 	gcm(fn);
