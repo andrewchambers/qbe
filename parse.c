@@ -331,6 +331,8 @@ Alpha:
 	}
 	t = lexh[hash(tok)*K >> M];
 	if (t == Txxx || strcmp(kwmap[t], tok) != 0) {
+		if (strcmp(tok, "asm") == 0)
+			return Oasm;
 		err("unknown keyword %s", tok);
 		return Txxx;
 	}
@@ -494,6 +496,42 @@ parsecls(int *tyn)
 	}
 }
 
+static uint
+asmflags(char *s)
+{
+	uint f;
+	char *p;
+
+	f = 0;
+	if (!s)
+		return f;
+	p = s;
+	if (*p == '"')
+		p++;
+	for (; *p && *p != '"'; p++) {
+		if (*p == '+')
+			f |= ASM_RW;
+		else if (*p == 'm')
+			f |= ASM_MEM;
+	}
+	return f;
+}
+
+static int
+asmisclob(char *s, char *name)
+{
+	size_t n;
+	char *p;
+
+	if (!s)
+		return 0;
+	p = s;
+	if (*p == '"')
+		p++;
+	n = strlen(name);
+	return strncmp(p, name, n) == 0 && p[n] == '"';
+}
+
 static int
 parserefl(int arg)
 {
@@ -615,7 +653,7 @@ parseline(PState ps)
 		op = next();
 		break;
 	default:
-		if (isstore(t)) {
+		if (isstore(t) || t == Oasm) {
 		case Tblit:
 		case Tcall:
 		case Ovastart:
@@ -711,6 +749,74 @@ parseline(PState ps)
 		if (k >= Ksb)
 			k = Kw;
 		goto Ins;
+	}
+	if (op == Oasm) {
+		Asm *as;
+		AsmOp *opv;
+		char *tmpl;
+		int nout, nin, nclob, nops, n, ty;
+
+		if (next() != Tstr)
+			err("asm template string expected");
+		tmpl = tokval.str;
+		expect(Tcomma);
+		expect(Tint);
+		nout = tokval.num;
+		expect(Tcomma);
+		expect(Tint);
+		nin = tokval.num;
+		expect(Tcomma);
+		expect(Tint);
+		nclob = tokval.num;
+		nops = nout + nin;
+
+		vgrow(&curf->asms, curf->nasm + 1);
+		as = &curf->asms[curf->nasm++];
+		as->tmpl = tmpl;
+		as->nout = nout;
+		as->nin = nin;
+		as->nclob = nclob;
+		as->memclob = 0;
+		as->op = vnew(nops, sizeof as->op[0], PFn);
+		as->clob = vnew(nclob, sizeof as->clob[0], PFn);
+
+		expect(Tlparen);
+		for (n=0; n<nops; n++) {
+			if (n)
+				expect(Tcomma);
+			if (next() != Tstr)
+				err("asm constraint string expected");
+			opv = &as->op[n];
+			opv->cstr = tokval.str;
+			opv->flags = asmflags(tokval.str) | (n < nout ? ASM_OUT : ASM_IN);
+			opv->cls = parsecls(&ty);
+			opv->ref = parseref();
+			if (req(opv->ref, R))
+				err("invalid asm operand");
+		}
+		expect(Trparen);
+
+		expect(Tlparen);
+		for (n=0; n<nclob; n++) {
+			if (n)
+				expect(Tcomma);
+			if (next() != Tstr)
+				err("asm clobber string expected");
+			as->clob[n] = tokval.str;
+			if (asmisclob(tokval.str, "memory"))
+				as->memclob = 1;
+		}
+		expect(Trparen);
+		expect(Tnl);
+
+		curi->op = Oasm;
+		curi->cls = Kw;
+		curi->to = R;
+		curi->arg[0] = R;
+		curi->arg[1] = R;
+		curi->aux = curf->nasm-1;
+		curi++;
+		return PIns;
 	}
 	if (op == Tloadw)
 		op = Oloadsw;
@@ -811,6 +917,8 @@ typecheck(Fn *fn)
 	int k;
 	Tmp *t;
 	Ref r;
+	Asm *as;
+	AsmOp *op;
 	BSet pb[1], ppb[1];
 
 	fillpreds(fn);
@@ -819,13 +927,29 @@ typecheck(Fn *fn)
 	for (b=fn->start; b; b=b->link) {
 		for (p=b->phi; p; p=p->link)
 			fn->tmp[p->to.val].cls = p->cls;
-		for (i=b->ins; i<&b->ins[b->nins]; i++)
+		for (i=b->ins; i<&b->ins[b->nins]; i++) {
+			if (i->op == Oasm) {
+				as = &fn->asms[i->aux];
+				for (n=0; n<(uint)as->nout; n++) {
+					op = &as->op[n];
+					if (op->flags & ASM_MEM)
+						continue;
+					if (rtype(op->ref) != RTmp)
+						continue;
+					t = &fn->tmp[op->ref.val];
+					if (clsmerge(&t->cls, op->cls))
+						err("temporary %%%s is assigned with"
+							" multiple types", t->name);
+				}
+				continue;
+			}
 			if (rtype(i->to) == RTmp) {
 				t = &fn->tmp[i->to.val];
 				if (clsmerge(&t->cls, i->cls))
 					err("temporary %%%s is assigned with"
 						" multiple types", t->name);
 			}
+		}
 	}
 	for (b=fn->start; b; b=b->link) {
 		bszero(pb);
@@ -847,7 +971,20 @@ typecheck(Fn *fn)
 			if (!bsequal(pb, ppb))
 				err("predecessors not matched in phi %%%s", t->name);
 		}
-		for (i=b->ins; i<&b->ins[b->nins]; i++)
+		for (i=b->ins; i<&b->ins[b->nins]; i++) {
+			if (i->op == Oasm) {
+				as = &fn->asms[i->aux];
+				for (n=0; n<(uint)(as->nout + as->nin); n++) {
+					op = &as->op[n];
+					r = op->ref;
+					if (rtype(r) != RTmp)
+						continue;
+					if (!usecheck(r, op->cls, fn))
+						err("invalid type for asm operand %%%s",
+							fn->tmp[r.val].name);
+				}
+				continue;
+			}
 			for (n=0; n<2; n++) {
 				k = optab[i->op].argcls[n][i->cls];
 				r = i->arg[n];
@@ -870,6 +1007,7 @@ typecheck(Fn *fn)
 						n == 1 ? "second" : "first",
 						t->name, optab[i->op].name);
 			}
+		}
 		r = b->jmp.arg;
 		if (isret(b->jmp.type)) {
 			if (b->jmp.type == Jretc)
@@ -917,6 +1055,10 @@ parsefn(Lnk *lnk)
 	curf->con[1].type = CBits;
 	curf->lnk = *lnk;
 	curf->leaf = 1;
+	curf->mem = vnew(0, sizeof curf->mem[0], PFn);
+	curf->nmem = 0;
+	curf->asms = vnew(0, sizeof curf->asms[0], PFn);
+	curf->nasm = 0;
 	blink = &curf->start;
 	curf->retty = Kx;
 	if (peek() != Tglo)
@@ -937,8 +1079,6 @@ parsefn(Lnk *lnk)
 		err("empty function");
 	if (curb->jmp.type == Jxxx)
 		err("last block misses jump");
-	curf->mem = vnew(0, sizeof curf->mem[0], PFn);
-	curf->nmem = 0;
 	curf->nblk = nblk;
 	curf->rpo = vnew(nblk, sizeof curf->rpo[0], PFn);
 	for (b=curf->start; b; b=b->link)
@@ -1362,6 +1502,27 @@ printfn(Fn *fn, FILE *f)
 		}
 		for (i=b->ins; i<&b->ins[b->nins]; i++) {
 			fprintf(f, "\t");
+			if (i->op == Oasm) {
+				Asm *as = &fn->asms[i->aux];
+				AsmOp *op;
+				fprintf(f, "asm %s, %d, %d, %d (",
+					as->tmpl, as->nout, as->nin, as->nclob);
+				for (n=0; n<(uint)(as->nout + as->nin); n++) {
+					if (n)
+						fprintf(f, ", ");
+					op = &as->op[n];
+					fprintf(f, "%s %c ", op->cstr, ktoc[op->cls]);
+					printref(op->ref, fn, f);
+				}
+				fprintf(f, ") (");
+				for (n=0; n<(uint)as->nclob; n++) {
+					if (n)
+						fprintf(f, ", ");
+					fprintf(f, "%s", as->clob[n]);
+				}
+				fprintf(f, ")\n");
+				continue;
+			}
 			if (!req(i->to, R)) {
 				printref(i->to, fn, f);
 				fprintf(f, " =%c ", ktoc[i->cls]);

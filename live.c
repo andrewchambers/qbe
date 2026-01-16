@@ -32,6 +32,20 @@ bset(Ref r, Blk *b, int *nlv, Tmp *tmp)
 	}
 }
 
+static void
+bset_ref(Ref r, Blk *b, int *nlv, Tmp *tmp, Fn *f)
+{
+	Mem *m;
+
+	if (rtype(r) == RMem) {
+		m = &f->mem[r.val];
+		bset_ref(m->base, b, nlv, tmp, f);
+		bset_ref(m->index, b, nlv, tmp, f);
+		return;
+	}
+	bset(r, b, nlv, tmp);
+}
+
 /* liveness analysis
  * requires rpo computation
  */
@@ -80,8 +94,8 @@ Again:
 			bset(b->jmp.arg, b, nlv, f->tmp);
 		for (k=0; k<2; k++)
 			b->nlive[k] = nlv[k];
-		for (i=&b->ins[b->nins]; i!=b->ins;) {
-			if ((--i)->op == Ocall && rtype(i->arg[1]) == RCall) {
+	for (i=&b->ins[b->nins]; i!=b->ins;) {
+		if ((--i)->op == Ocall && rtype(i->arg[1]) == RCall) {
 				b->in->t[0] &= ~T.retregs(i->arg[1], m);
 				for (k=0; k<2; k++) {
 					nlv[k] -= m[k];
@@ -98,6 +112,38 @@ Again:
 					nlv[k] -= T.nrsave[k];
 					nlv[k] += m[k];
 				}
+			}
+			if (i->op == Oasm) {
+				Asm *as = &f->asms[i->aux];
+				AsmOp *op;
+				uint a;
+
+				for (a=0; a<(uint)as->nout; a++) {
+					op = &as->op[a];
+					if (op->flags & ASM_RW)
+						continue;
+					if (op->flags & ASM_MEM)
+						continue;
+					if (rtype(op->ref) == RTmp) {
+						t = op->ref.val;
+						if (bshas(b->in, t))
+							nlv[KBASE(f->tmp[t].cls)]--;
+						bsset(b->gen, t);
+						bsclr(b->in, t);
+					}
+				}
+				for (a=0; a<(uint)(as->nout + as->nin); a++) {
+					op = &as->op[a];
+					if ((op->flags & ASM_OUT)
+					&& !(op->flags & ASM_MEM)
+					&& !(op->flags & ASM_RW))
+						continue;
+					bset_ref(op->ref, b, nlv, f->tmp, f);
+				}
+				for (k=0; k<2; k++)
+					if (nlv[k] > b->nlive[k])
+						b->nlive[k] = nlv[k];
+				continue;
 			}
 			if (!req(i->to, R)) {
 				assert(rtype(i->to) == RTmp);

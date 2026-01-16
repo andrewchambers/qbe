@@ -52,6 +52,7 @@ static void
 func(Fn *fn)
 {
 	uint n;
+	int hasasm;
 
 	if (dbg)
 		fprintf(stderr, "**** Function %s ****", fn->name);
@@ -59,6 +60,7 @@ func(Fn *fn)
 		fprintf(stderr, "\n> After parsing:\n");
 		printfn(fn, stderr);
 	}
+	hasasm = fn->nasm > 0;
 	T.abi0(fn);
 	fillcfg(fn);
 	filluse(fn);
@@ -67,6 +69,8 @@ func(Fn *fn)
 	ssa(fn);
 	filluse(fn);
 	ssacheck(fn);
+	if (hasasm)
+		goto backend;
 	fillalias(fn);
 	loadopt(fn);
 	filluse(fn);
@@ -80,7 +84,8 @@ func(Fn *fn)
 	simplcfg(fn);
 	filluse(fn);
 	filldom(fn);
-	gcm(fn);
+	if (!hasasm)
+		gcm(fn);
 	filluse(fn);
 	ssacheck(fn);
 	if (T.cansel) {
@@ -90,6 +95,7 @@ func(Fn *fn)
 		filldom(fn);
 		ssacheck(fn);
 	}
+backend:
 	T.abi1(fn);
 	simpl(fn);
 	fillcfg(fn);

@@ -31,6 +31,24 @@ adduse(Tmp *tmp, int ty, Blk *b, ...)
 	va_end(ap);
 }
 
+static void
+adduse_ref(Fn *fn, Ref r, Blk *b, Ins *i)
+{
+	Mem *m;
+	Tmp *tmp;
+
+	if (rtype(r) == RMem) {
+		m = &fn->mem[r.val];
+		adduse_ref(fn, m->base, b, i);
+		adduse_ref(fn, m->index, b, i);
+		return;
+	}
+	if (rtype(r) != RTmp)
+		return;
+	tmp = &fn->tmp[r.val];
+	adduse(tmp, UIns, b, i);
+}
+
 /* fill usage, width, phi, and class information
  * must not change .visit fields
  */
@@ -74,6 +92,32 @@ filluse(Fn *fn)
 				}
 		}
 		for (i=b->ins; i<&b->ins[b->nins]; i++) {
+			if (i->op == Oasm) {
+				Asm *as = &fn->asms[i->aux];
+				AsmOp *op;
+				for (a=0; a<(uint)(as->nout + as->nin); a++) {
+					op = &as->op[a];
+					if (op->flags & ASM_OUT) {
+						if (op->flags & ASM_RW) {
+							adduse_ref(fn, op->ref, b, i);
+							continue;
+						}
+						if (!(op->flags & ASM_MEM) && rtype(op->ref) == RTmp) {
+							t = op->ref.val;
+							tmp[t].width = WFull;
+							tmp[t].def = i;
+							tmp[t].bid = b->id;
+							tmp[t].ndef++;
+							tmp[t].cls = op->cls;
+						} else {
+							adduse_ref(fn, op->ref, b, i);
+						}
+					} else {
+						adduse_ref(fn, op->ref, b, i);
+					}
+				}
+				continue;
+			}
 			if (!req(i->to, R)) {
 				assert(rtype(i->to) == RTmp);
 				w = WFull;
@@ -281,6 +325,27 @@ renblk(Blk *b, Name **stk, Fn *fn)
 	for (p=b->phi; p; p=p->link)
 		rendef(&p->to, b, stk, fn);
 	for (i=b->ins; i<&b->ins[b->nins]; i++) {
+		if (i->op == Oasm) {
+			Asm *as = &fn->asms[i->aux];
+			AsmOp *op;
+			for (m=0; m<as->nout + as->nin; m++) {
+				op = &as->op[m];
+				if (op->flags & ASM_OUT) {
+					if (op->flags & ASM_RW || op->flags & ASM_MEM) {
+						t = op->ref.val;
+						if (rtype(op->ref) == RTmp && fn->tmp[t].visit)
+							op->ref = getstk(t, b, stk);
+					} else {
+						rendef(&op->ref, b, stk, fn);
+					}
+				} else {
+					t = op->ref.val;
+					if (rtype(op->ref) == RTmp && fn->tmp[t].visit)
+						op->ref = getstk(t, b, stk);
+				}
+			}
+			continue;
+		}
 		for (m=0; m<2; m++) {
 			t = i->arg[m].val;
 			if (rtype(i->arg[m]) == RTmp)

@@ -1,0 +1,13 @@
+# inline asm: input and output register
+export
+function w $main() {
+@start
+	%in =w copy 12
+	asm "mov %1, %0", 1, 1, 0 ("=r" w %out, "r" w %in) ()
+	%ok =w ceqw %out, 12
+	jnz %ok, @ok, @bad
+@ok
+	ret 0
+@bad
+	ret 1
+}

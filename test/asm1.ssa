@@ -1,0 +1,12 @@
+# inline asm: output register
+export
+function w $main() {
+@start
+	asm "mov $5, %0", 1, 0, 0 ("=r" w %out) ()
+	%ok =w ceqw %out, 5
+	jnz %ok, @ok, @bad
+@ok
+	ret 0
+@bad
+	ret 1
+}

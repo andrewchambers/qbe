@@ -238,6 +238,140 @@ getarg(char c, Ins *i)
 	}
 }
 
+static void
+emit_asm_mem(Ref r, E *e)
+{
+	Mem *m;
+	Con off;
+
+	switch (rtype(r)) {
+	case RMem:
+		m = &e->fn->mem[r.val];
+		if (rtype(m->base) == RSlot) {
+			off.type = CBits;
+			off.bits.i = slot(m->base, e);
+			addcon(&m->offset, &off, 1);
+			m->base = TMP(e->fp);
+		}
+		if (m->offset.type != CUndef)
+			emitcon(&m->offset, e);
+		fputc('(', e->f);
+		if (!req(m->base, R))
+			fprintf(e->f, "%%%s",
+				regtoa(m->base.val, SLong)
+			);
+		else if (m->offset.type == CAddr)
+			fprintf(e->f, "%%rip");
+		if (!req(m->index, R))
+			fprintf(e->f, ", %%%s, %d",
+				regtoa(m->index.val, SLong),
+				m->scale
+			);
+		fputc(')', e->f);
+		break;
+	case RSlot:
+		fprintf(e->f, "%d(%%%s)",
+			slot(r, e),
+			regtoa(e->fp, SLong)
+		);
+		break;
+	case RCon:
+		off = e->fn->con[r.val];
+		emitcon(&off, e);
+		if (off.type == CAddr)
+		if (off.sym.type != SThr || T.apple)
+			fprintf(e->f, "(%%rip)");
+		break;
+	case RTmp:
+		assert(isreg(r));
+		fprintf(e->f, "(%%%s)", regtoa(r.val, SLong));
+		break;
+	default:
+		die("invalid asm memory operand");
+	}
+}
+
+static void
+emit_asm_op(AsmOp *op, E *e)
+{
+	Ref r;
+	int sz;
+
+	r = op->ref;
+	if (op->flags & ASM_MEM) {
+		emit_asm_mem(r, e);
+		return;
+	}
+	switch (rtype(r)) {
+	case RTmp:
+		assert(isreg(r));
+		if (KBASE(op->cls) == 1)
+			sz = SLong;
+		else
+			sz = KWIDE(op->cls) ? SLong : SWord;
+		fprintf(e->f, "%%%s", regtoa(r.val, sz));
+		break;
+	default:
+		die("invalid asm operand");
+	}
+}
+
+static void
+emit_asm(Ins *i, E *e)
+{
+	Asm *as;
+	char *s;
+	int idx;
+
+	as = &e->fn->asms[i->aux];
+	s = as->tmpl;
+	if (*s == '"')
+		s++;
+	fputc('\t', e->f);
+	while (*s && *s != '"') {
+		if (*s == '\\') {
+			s++;
+			if (*s == 'n') {
+				fputc('\n', e->f);
+				fputc('\t', e->f);
+				s++;
+				continue;
+			}
+			if (*s == 't') {
+				fputc('\t', e->f);
+				s++;
+				continue;
+			}
+			if (*s) {
+				fputc(*s++, e->f);
+				continue;
+			}
+			break;
+		}
+		if (*s == '%') {
+			s++;
+			if (*s == '%') {
+				fputc('%', e->f);
+				s++;
+				continue;
+			}
+			if (*s >= '0' && *s <= '9') {
+				idx = 0;
+				while (*s >= '0' && *s <= '9')
+					idx = idx * 10 + (*s++ - '0');
+				if (idx < 0 || idx >= as->nout + as->nin)
+					die("invalid asm operand index");
+				emit_asm_op(&as->op[idx], e);
+				continue;
+			}
+			fputc('%', e->f);
+			continue;
+		}
+		fputc(*s++, e->f);
+	}
+	fputc('\n', e->f);
+}
+
 static void emitins(Ins, E *);
 
 static void
@@ -410,6 +544,15 @@ emitins(Ins i, E *e)
 	char *sym;
 
 	switch (i.op) {
+	case Oasm:
+		emit_asm(&i, e);
+		break;
+	case Oextsw:
+		if (rtype(i.arg[0]) == RCon) {
+			emitf("movq %0, %=", &i, e);
+			break;
+		}
+		goto Table;
 	default:
 		if (isxsel(i.op))
 			goto case_Oxsel;

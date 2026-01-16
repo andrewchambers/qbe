@@ -26,6 +26,8 @@ typedef struct Alias Alias;
 typedef struct Tmp Tmp;
 typedef struct Con Con;
 typedef struct Addr Mem;
+typedef struct Asm Asm;
+typedef struct AsmOp AsmOp;
 typedef struct Fn Fn;
 typedef struct Typ Typ;
 typedef struct Field Field;
@@ -235,6 +237,30 @@ struct Ins {
 	uint cls:2;
 	Ref to;
 	Ref arg[2];
+	uint aux;
+};
+
+enum {
+	ASM_OUT = 1<<0,
+	ASM_IN  = 1<<1,
+	ASM_RW  = 1<<2,
+	ASM_MEM = 1<<3,
+};
+
+struct AsmOp {
+	Ref ref;
+	char *cstr; /* constraint string, with quotes */
+	int cls;
+	uint flags;
+};
+
+struct Asm {
+	char *tmpl; /* template string, with quotes */
+	AsmOp *op;
+	int nout, nin;
+	int nclob;
+	char **clob;
+	int memclob;
 };
 
 struct Phi {
@@ -399,9 +425,11 @@ struct Fn {
 	Tmp *tmp;
 	Con *con;
 	Mem *mem;
+	Asm *asms;
 	int ntmp;
 	int ncon;
 	int nmem;
+	int nasm;
 	uint nblk;
 	int retty; /* index in typ[], -1 if no aggregate return */
 	Ref retr;

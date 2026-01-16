@@ -324,6 +324,7 @@ void
 emiti(Ins i)
 {
 	emit(i.op, i.cls, i.to, i.arg[0], i.arg[1]);
+	curi->aux = i.aux;
 }
 
 void

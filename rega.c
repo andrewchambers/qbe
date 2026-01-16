@@ -18,6 +18,7 @@ struct RMap {
 static bits regu;      /* registers used */
 static Tmp *tmp;       /* function temporaries */
 static Mem *mem;       /* function mem references */
+static Fn *curfn;      /* current function (for asm operands) */
 static struct {
 	Ref src, dst;
 	int cls;
@@ -107,7 +108,8 @@ ralloctry(RMap *m, int t, int try)
 	int h, r, r0, r1;
 
 	if (t < Tmp0) {
-		assert(bshas(m->b, t));
+		if (!bshas(m->b, t))
+			radd(m, t, t);
 		return TMP(t);
 	}
 	if (bshas(m->b, t)) {
@@ -273,8 +275,13 @@ move(int r, Ref to, RMap *m)
 		t = m->t[n];
 		rfree(m, t);
 		bsset(m->b, r);
-		ralloc(m, t);
-		bsclr(m->b, r);
+		if (t < Tmp0) {
+			bsclr(m->b, r);
+			radd(m, t, t);
+		} else {
+			ralloc(m, t);
+			bsclr(m->b, r);
+		}
 	}
 	t = req(to, R) ? r : to.val;
 	radd(m, t, r);
@@ -301,7 +308,6 @@ dopm(Blk *b, Ins *i, RMap *m)
 		i--;
 		move(i->arg[0].val, i->to, m);
 	} while (i != b->ins && regcpy(i-1));
-	assert(m0.n <= m->n);
 	if (i != b->ins && (i-1)->op == Ocall) {
 		def = T.retregs((i-1)->arg[1], 0) | T.rglob;
 		for (r=0; T.rsave[r]>=0; r++)
@@ -353,6 +359,38 @@ insert(Ref *r, Ref **rs, int p)
 }
 
 static void
+asm_def_ref(Ref *r, RMap *cur)
+{
+	int t, rf;
+
+	if (rtype(*r) != RTmp)
+		return;
+	t = r->val;
+	if (t < Tmp0 && (BIT(t) & T.rglob))
+		return;
+	rf = rfree(cur, t);
+	if (rf == -1)
+		*r = ralloc(cur, t);
+	else
+		*r = TMP(rf);
+}
+
+static void
+asm_use_ref(Ref *r, RMap *cur)
+{
+	Mem *m;
+
+	if (rtype(*r) == RMem) {
+		m = &mem[r->val];
+		asm_use_ref(&m->base, cur);
+		asm_use_ref(&m->index, cur);
+		return;
+	}
+	if (rtype(*r) == RTmp)
+		*r = ralloc(cur, r->val);
+}
+
+static void
 doblk(Blk *b, RMap *cur)
 {
 	int t, x, r, rf, rt, nr;
@@ -368,6 +406,29 @@ doblk(Blk *b, RMap *cur)
 		emiti(*--i1);
 		i = curi;
 		rf = -1;
+		if (i->op == Oasm) {
+			Asm *as = &curfn->asms[i->aux];
+			AsmOp *op;
+			int n;
+
+			for (n=0; n<as->nout; n++) {
+				op = &as->op[n];
+				if (op->flags & ASM_MEM)
+					continue;
+				if (op->flags & ASM_RW)
+					continue;
+				asm_def_ref(&op->ref, cur);
+			}
+			for (n=0; n<as->nout + as->nin; n++) {
+				op = &as->op[n];
+				if ((op->flags & ASM_OUT)
+				&& !(op->flags & ASM_MEM)
+				&& !(op->flags & ASM_RW))
+					continue;
+				asm_use_ref(&op->ref, cur);
+			}
+			continue;
+		}
 		switch (i->op) {
 		case Ocall:
 			rs = T.argregs(i->arg[1], 0) | T.rglob;
@@ -387,19 +448,23 @@ doblk(Blk *b, RMap *cur)
 				sethint(i->arg[0].val, i->to.val);
 			/* fall through */
 		default:
-			if (!req(i->to, R)) {
-				assert(rtype(i->to) == RTmp);
-				r = i->to.val;
-				if (r < Tmp0 && (BIT(r) & T.rglob))
-					break;
-				rf = rfree(cur, r);
-				if (rf == -1) {
-					assert(!isreg(i->to));
-					curi++;
-					continue;
+				if (!req(i->to, R)) {
+					assert(rtype(i->to) == RTmp);
+					r = i->to.val;
+					if (r < Tmp0 && (BIT(r) & T.rglob))
+						break;
+					rf = rfree(cur, r);
+					if (rf == -1) {
+						if (isreg(i->to)) {
+							radd(cur, r, r);
+							i->to = TMP(r);
+							break;
+						}
+						curi++;
+						continue;
+					}
+					i->to = TMP(rf);
 				}
-				i->to = TMP(rf);
-			}
 			break;
 		}
 		for (x=0, nr=0; x<2; x++)
@@ -490,6 +555,7 @@ rega(Fn *fn)
 	regu = 0;
 	tmp = fn->tmp;
 	mem = fn->mem;
+	curfn = fn;
 	blk = alloc(fn->nblk * sizeof blk[0]);
 	end = alloc(fn->nblk * sizeof end[0]);
 	beg = alloc(fn->nblk * sizeof beg[0]);

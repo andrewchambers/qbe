@@ -66,6 +66,79 @@ hascon(Ref r, Con **pc, Fn *fn)
 	}
 }
 
+static int
+asmfixedreg(char *s)
+{
+	if (!s)
+		return -1;
+	if (*s == '"')
+		s++;
+	for (; *s && *s != '"'; s++) {
+		switch (*s) {
+		case 'a': return RAX;
+		case 'b': return RBX;
+		case 'c': return RCX;
+		case 'd': return RDX;
+		case 'S': return RSI;
+		case 'D': return RDI;
+		}
+	}
+	return -1;
+}
+
+static void
+asmfix(Ins i, Fn *fn)
+{
+	struct copy {
+		Ref dst;
+		Ref src;
+		int cls;
+	} *post;
+	struct copy *pre;
+	Asm *as;
+	AsmOp *op;
+	Ref orig;
+	int n, reg, npost, npre;
+
+	as = &fn->asms[i.aux];
+	npost = 0;
+	npre = 0;
+	post = as->nout ? alloc(as->nout * sizeof(*post)) : 0;
+	pre = as->nin ? alloc(as->nin * sizeof(*pre)) : 0;
+	for (n=0; n<as->nout + as->nin; n++) {
+		op = &as->op[n];
+		if (op->flags & ASM_MEM)
+			continue;
+		if (op->flags & ASM_RW)
+			continue;
+		reg = asmfixedreg(op->cstr);
+		if (reg < 0)
+			continue;
+		orig = op->ref;
+		if (n >= as->nout) {
+			if (!req(orig, TMP(reg))) {
+				pre[npre].dst = TMP(reg);
+				pre[npre].src = orig;
+				pre[npre].cls = op->cls;
+				npre++;
+			}
+		} else {
+			if (!req(orig, TMP(reg))) {
+				post[npost].dst = orig;
+				post[npost].src = TMP(reg);
+				post[npost].cls = op->cls;
+				npost++;
+			}
+		}
+		op->ref = TMP(reg);
+	}
+	for (n=npost; n--;)
+		emit(Ocopy, post[n].cls, post[n].dst, post[n].src, R);
+	emiti(i);
+	for (n=npre; n--;)
+		emit(Ocopy, pre[n].cls, pre[n].dst, pre[n].src, R);
+}
+
 static void
 fixarg(Ref *r, int k, Ins *i, Fn *fn)
 {
@@ -259,6 +332,9 @@ sel(Ins i, Num *tn, Fn *fn)
 	i0 = curi;
 	k = i.cls;
 	switch (i.op) {
+	case Oasm:
+		asmfix(i, fn);
+		break;
 	case Odiv:
 	case Orem:
 	case Oudiv:
@@ -596,9 +672,13 @@ seljmp(Blk *b, Fn *fn)
 		return;
 	assert(b->jmp.type == Jjnz);
 	r = b->jmp.arg;
+	if (rtype(r) != RTmp) {
+		Ref rt = newtmp("jnz", Kw, fn);
+		emit(Ocopy, Kw, rt, r, R);
+		r = rt;
+	}
 	t = &fn->tmp[r.val];
 	b->jmp.arg = R;
-	assert(rtype(r) == RTmp);
 	if (b->s1 == b->s2) {
 		chuse(r, -1, fn);
 		b->jmp.type = Jjmp;

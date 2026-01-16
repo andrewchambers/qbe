@@ -32,6 +32,107 @@ tmpuse(Ref r, int use, int loop, Fn *fn)
 	}
 }
 
+static int
+asmclobname(char *s, const char *name)
+{
+	size_t n;
+
+	if (!s)
+		return 0;
+	if (*s == '"')
+		s++;
+	n = strlen(name);
+	return strncmp(s, name, n) == 0 && s[n] == '"';
+}
+
+static int
+asmclobreg(char *s)
+{
+	size_t n;
+
+	if (!s)
+		return -1;
+	if (strncmp(T.name, "amd64", 5) != 0)
+		return -1;
+	if (*s == '"')
+		s++;
+	for (n=0; s[n] && s[n] != '"'; n++)
+		;
+	if (n == 3 && strncmp(s, "rax", 3) == 0) return T.gpr0 + 0;
+	if (n == 3 && strncmp(s, "rcx", 3) == 0) return T.gpr0 + 1;
+	if (n == 3 && strncmp(s, "rdx", 3) == 0) return T.gpr0 + 2;
+	if (n == 3 && strncmp(s, "rsi", 3) == 0) return T.gpr0 + 3;
+	if (n == 3 && strncmp(s, "rdi", 3) == 0) return T.gpr0 + 4;
+	if (n == 2 && strncmp(s, "r8", 2) == 0)  return T.gpr0 + 5;
+	if (n == 2 && strncmp(s, "r9", 2) == 0)  return T.gpr0 + 6;
+	if (n == 3 && strncmp(s, "r10", 3) == 0) return T.gpr0 + 7;
+	if (n == 3 && strncmp(s, "r11", 3) == 0) return T.gpr0 + 8;
+	if (n == 3 && strncmp(s, "rbx", 3) == 0) return T.gpr0 + 9;
+	if (n == 3 && strncmp(s, "r12", 3) == 0) return T.gpr0 + 10;
+	if (n == 3 && strncmp(s, "r13", 3) == 0) return T.gpr0 + 11;
+	if (n == 3 && strncmp(s, "r14", 3) == 0) return T.gpr0 + 12;
+	if (n == 3 && strncmp(s, "r15", 3) == 0) return T.gpr0 + 13;
+	if (n == 3 && strncmp(s, "rbp", 3) == 0) return T.gpr0 + 14;
+	if (n == 3 && strncmp(s, "rsp", 3) == 0) return T.gpr0 + 15;
+	if (n >= 4 && strncmp(s, "xmm", 3) == 0) {
+		int idx = 0;
+		size_t i = 3;
+		for (; i < n; i++) {
+			if (s[i] < '0' || s[i] > '9')
+				return -1;
+			idx = idx * 10 + (s[i] - '0');
+		}
+		if (idx >= 0 && idx < T.nfpr)
+			return T.fpr0 + idx;
+	}
+	return -1;
+}
+
+static void
+asmclobinfo(Asm *as, bits *clob, int *cgpr, int *cfpr)
+{
+	bits b;
+	int r;
+	uint n;
+
+	b = 0;
+	*cgpr = 0;
+	*cfpr = 0;
+	for (n=0; n<(uint)as->nclob; n++) {
+		if (asmclobname(as->clob[n], "memory")
+		|| asmclobname(as->clob[n], "cc"))
+			continue;
+		r = asmclobreg(as->clob[n]);
+		if (r < 0)
+			continue;
+		if (b & BIT(r))
+			continue;
+		b |= BIT(r);
+		if (r >= T.gpr0 && r < T.gpr0 + T.ngpr)
+			(*cgpr)++;
+		else if (r >= T.fpr0 && r < T.fpr0 + T.nfpr)
+			(*cfpr)++;
+	}
+	*clob = b;
+}
+
+static void
+asmuse_ref(Ref r, BSet *v, BSet *w, Fn *fn)
+{
+	Mem *m;
+
+	if (rtype(r) == RMem) {
+		m = &fn->mem[r.val];
+		asmuse_ref(m->base, v, w, fn);
+		asmuse_ref(m->index, v, w, fn);
+		return;
+	}
+	if (rtype(r) != RTmp)
+		return;
+	bsset(v, r.val);
+	bsset(w, r.val);
+}
+
 /* evaluate spill costs of temporaries,
  * this also fills usage information
  * requires rpo, preds
@@ -78,6 +179,22 @@ fillcost(Fn *fn)
 		}
 		n = b->loop;
 		for (i=b->ins; i<&b->ins[b->nins]; i++) {
+			if (i->op == Oasm) {
+				Asm *as = &fn->asms[i->aux];
+				AsmOp *op;
+				for (a=0; a<(uint)(as->nout + as->nin); a++) {
+					op = &as->op[a];
+					if (op->flags & ASM_OUT) {
+						if (op->flags & ASM_RW || op->flags & ASM_MEM)
+							tmpuse(op->ref, 1, n, fn);
+						else
+							tmpuse(op->ref, 0, n, fn);
+					} else {
+						tmpuse(op->ref, 1, n, fn);
+					}
+				}
+				continue;
+			}
 			tmpuse(i->to, 0, n, fn);
 			tmpuse(i->arg[0], 1, n, fn);
 			tmpuse(i->arg[1], 1, n, fn);
@@ -427,20 +544,77 @@ spill(Fn *fn)
 				i = dopm(b, i, v);
 				continue;
 			}
-			bszero(w);
-			if (!req(i->to, R)) {
-				assert(rtype(i->to) == RTmp);
-				t = i->to.val;
-				if (bshas(v, t))
-					bsclr(v, t);
-				else {
-					/* make sure we have a reg
-					 * for the result */
-					assert(t >= Tmp0 && "dead reg");
-					bsset(v, t);
-					bsset(w, t);
+			if (i->op == Oasm) {
+				Asm *as = &fn->asms[i->aux];
+				AsmOp *op;
+				bits clob;
+				int cgpr, cfpr;
+
+				asmclobinfo(as, &clob, &cgpr, &cfpr);
+				bszero(w);
+				for (n=0; n<(uint)as->nout; n++) {
+					op = &as->op[n];
+					if (op->flags & ASM_MEM)
+						continue;
+					if (op->flags & ASM_RW)
+						continue;
+					if (rtype(op->ref) != RTmp)
+						continue;
+					t = op->ref.val;
+					if (t < Tmp0)
+						continue;
+					if (bshas(v, t))
+						bsclr(v, t);
+					else {
+						bsset(v, t);
+						bsset(w, t);
+					}
 				}
+				for (n=0; n<(uint)(as->nout + as->nin); n++) {
+					op = &as->op[n];
+					if ((op->flags & ASM_OUT)
+					&& !(op->flags & ASM_MEM)
+					&& !(op->flags & ASM_RW))
+						continue;
+					asmuse_ref(op->ref, v, w, fn);
+				}
+				bscopy(u, v);
+				limit2(v, cgpr, cfpr, w);
+				if (clob)
+					sethint(v, clob);
+				reloads(u, v);
+				for (n=0; n<(uint)as->nout; n++) {
+					op = &as->op[n];
+					if (op->flags & ASM_MEM)
+						continue;
+					if (rtype(op->ref) != RTmp)
+						continue;
+					store(op->ref, tmp[op->ref.val].slot);
+					if (op->ref.val >= Tmp0)
+						bsclr(v, op->ref.val);
+				}
+				emiti(*i);
+				r = v->t[0]; /* Tmp0 is NBit */
+				if (r)
+					sethint(v, r);
+				continue;
 			}
+			bszero(w);
+				if (!req(i->to, R)) {
+					assert(rtype(i->to) == RTmp);
+					t = i->to.val;
+					if (t < Tmp0) {
+						if (bshas(v, t))
+							bsclr(v, t);
+					} else if (bshas(v, t)) {
+						bsclr(v, t);
+					} else {
+						/* make sure we have a reg
+						 * for the result */
+						bsset(v, t);
+						bsset(w, t);
+					}
+				}
 			j = T.memargs(i->op);
 			for (n=0; n<2; n++)
 				if (rtype(i->arg[n]) == RMem)
@@ -496,9 +670,9 @@ spill(Fn *fn)
 				sethint(v, r);
 		}
 		if (b == fn->start)
-			assert(v->t[0] == (T.rglob | fn->reg));
+			assert((v->t[0] & (T.rglob | fn->reg)) == (T.rglob | fn->reg));
 		else
-			assert(v->t[0] == T.rglob);
+			assert((v->t[0] & T.rglob) == T.rglob);
 
 		for (p=b->phi; p; p=p->link) {
 			assert(rtype(p->to) == RTmp);
