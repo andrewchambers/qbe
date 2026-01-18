@@ -38,6 +38,22 @@ struct Params {
 	uint stk;
 };
 
+static int
+hasld(Typ *t)
+{
+	Field *f;
+	uint n;
+
+	for (n=0; n<t->nunion; n++)
+		for (f=t->fields[n]; f->type != FEnd; f++) {
+			if (f->type == Fe)
+				return 1;
+			if (f->type == FTyp && hasld(&typ[f->len]))
+				return 1;
+		}
+	return 0;
+}
+
 static int gpreg[12] = {R0, R1, R2, R3, R4, R5, R6, R7};
 static int fpreg[12] = {V0, V1, V2, V3, V4, V5, V6, V7};
 static int store[] = {
@@ -99,6 +115,9 @@ typclass(Class *c, Typ *t, int *gp, int *fp)
 	c->ngp = 0;
 	c->nfp = 0;
 	c->align = 8;
+
+	if (hasld(t))
+		err("long double not supported on arm64");
 
 	if (t->align > 3)
 		err("alignments larger than 8 are not supported");
@@ -733,6 +752,11 @@ arm64_abi(Fn *fn)
 	Insl *il;
 	int n0, n1, ioff;
 	Params p;
+	int t;
+
+	for (t=0; t<fn->ntmp; t++)
+		if (fn->tmp[t].cls == Ke)
+			err("long double not supported on arm64");
 
 	for (b=fn->start; b; b=b->link)
 		b->visit = 0;

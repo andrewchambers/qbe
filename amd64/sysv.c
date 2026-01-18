@@ -17,6 +17,24 @@ struct RAlloc {
 	RAlloc *link;
 };
 
+static Ref ldpadref(Fn *fn, Ref *ldpad, RAlloc **rap);
+
+static int
+hasld(Typ *t)
+{
+	Field *f;
+	uint n;
+
+	for (n=0; n<t->nunion; n++)
+		for (f=t->fields[n]; f->type!=FEnd; f++) {
+			if (f->type == Fe)
+				return 1;
+			if (f->type == FTyp && hasld(&typ[f->len]))
+				return 1;
+		}
+	return 0;
+}
+
 static void
 classify(AClass *a, Typ *t, uint s)
 {
@@ -52,6 +70,8 @@ classify(AClass *a, Typ *t, uint s)
 				classify(a, &typ[f->len], s);
 				s += typ[f->len].size;
 				break;
+			case Fe:
+				die("long double fields must be passed in memory");
 			}
 		}
 }
@@ -77,7 +97,7 @@ typclass(AClass *a, Typ *t)
 	a->size = sz;
 	a->align = t->align;
 
-	if (t->isdark || sz > 16 || sz == 0) {
+	if (t->isdark || sz > 16 || sz == 0 || hasld(t)) {
 		/* large or unaligned structures are
 		 * required to be passed in memory
 		 */
@@ -108,7 +128,7 @@ retr(Ref reg[2], AClass *aret)
 }
 
 static void
-selret(Blk *b, Fn *fn)
+selret(Blk *b, Fn *fn, Ref *ldpad, RAlloc **rap)
 {
 	int j, k, ca;
 	Ref r, r0, reg[2];
@@ -141,7 +161,13 @@ selret(Blk *b, Fn *fn)
 		}
 	} else {
 		k = j - Jretw;
-		if (KBASE(k) == 0) {
+		if (k == Ke) {
+			Ref pad;
+			pad = ldpadref(fn, ldpad, rap);
+			emit(Ofld, 0, R, pad, R);
+			emit(Ostoree, 0, R, r0, pad);
+			ca = 0;
+		} else if (KBASE(k) == 0) {
 			emit(Ocopy, k, TMP(RAX), r0, R);
 			ca = 1;
 		} else {
@@ -170,6 +196,13 @@ argsclass(Ins *i0, Ins *i1, AClass *ac, int op, AClass *aret, Ref *env)
 	for (i=i0, a=ac; i<i1; i++, a++)
 		switch (i->op - op + Oarg) {
 		case Oarg:
+			if (i->cls == Ke) {
+				a->inmem = 2;
+				a->align = 4;
+				a->size = 16;
+				a->cls[0] = i->cls;
+				break;
+			}
 			if (KBASE(i->cls) == 0)
 				pn = &nint;
 			else
@@ -299,8 +332,25 @@ rarg(int ty, int *ni, int *ns)
 		return TMP(XMM0 + (*ns)++);
 }
 
+static Ref
+ldpadref(Fn *fn, Ref *ldpad, RAlloc **rap)
+{
+	RAlloc *ra;
+	Ref r;
+
+	if (!req(*ldpad, R))
+		return *ldpad;
+	r = newtmp("ldpad", Kl, fn);
+	ra = alloc(sizeof *ra);
+	ra->i = (Ins){Oalloc16, Kl, r, {getcon(16, fn)}};
+	ra->link = *rap;
+	*rap = ra;
+	*ldpad = r;
+	return r;
+}
+
 static void
-selcall(Fn *fn, Ins *i0, Ins *i1, RAlloc **rap)
+selcall(Fn *fn, Ins *i0, Ins *i1, RAlloc **rap, Ref *ldpad)
 {
 	Ins *i;
 	AClass *ac, *a, aret;
@@ -368,7 +418,12 @@ selcall(Fn *fn, Ins *i0, Ins *i1, RAlloc **rap)
 		*rap = ra;
 	} else {
 		ra = 0;
-		if (KBASE(i1->cls) == 0) {
+		if (i1->cls == Ke) {
+			Ref pad;
+			pad = ldpadref(fn, ldpad, rap);
+			emit(Oload, Ke, i1->to, pad, R);
+			emit(Ofstp, 0, R, pad, R);
+		} else if (KBASE(i1->cls) == 0) {
 			emit(Ocopy, i1->cls, i1->to, TMP(RAX), R);
 			ca += 1;
 		} else {
@@ -411,13 +466,15 @@ selcall(Fn *fn, Ins *i0, Ins *i1, RAlloc **rap)
 	for (i=i0, a=ac, off=0; i<i1; i++, a++) {
 		if (i->op >= Oarge || !a->inmem)
 			continue;
+		if (a->align == 4)
+			off += off & 15;
 		r1 = newtmp("abi", Kl, fn);
 		if (i->op == Oargc) {
-			if (a->align == 4)
-				off += off & 15;
 			emit(Oblit1, 0, R, INT(a->type->size), R);
 			emit(Oblit0, 0, R, i->arg[1], r1);
-		} else
+		} else if (i->cls == Ke)
+			emit(Ostoree, 0, R, i->arg[0], r1);
+		else
 			emit(Ostorel, 0, R, i->arg[0], r1);
 		emit(Oadd, Kl, r1, r, getcon(off, fn));
 		off += a->size;
@@ -478,8 +535,10 @@ selpar(Fn *fn, Ins *i0, Ins *i1)
 			s += a->size / 4;
 			continue;
 		case 2:
+			if (a->align == 4)
+				s = (s+3) & -4;
 			emit(Oload, i->cls, i->to, SLOT(-s), R);
-			s += 2;
+			s += a->size / 4;
 			continue;
 		}
 		if (i->op == Opare)
@@ -543,6 +602,30 @@ selvaarg(Fn *fn, Blk *b, Ins *i)
 	c16 = getcon(16, fn);
 	ap = i->arg[0];
 	isint = KBASE(i->cls) == 0;
+
+	if (i->cls == Ke) {
+		Ref r0, r1, r2, r3;
+		Ref c15, c16, c16m, c8;
+
+		c15 = getcon(15, fn);
+		c16 = getcon(16, fn);
+		c16m = getcon(-16, fn);
+		c8 = getcon(8, fn);
+		r0 = newtmp("abi", Kl, fn);
+		r1 = newtmp("abi", Kl, fn);
+		r2 = newtmp("abi", Kl, fn);
+		r3 = newtmp("abi", Kl, fn);
+
+		/* overflow_arg_area = align16(overflow_arg_area) */
+		emit(Oload, Ke, i->to, r2, R);
+		emit(Ostorel, Kw, R, r3, r0);
+		emit(Oadd, Kl, r3, r2, c16);
+		emit(Oand, Kl, r2, r2, c16m);
+		emit(Oadd, Kl, r2, r1, c15);
+		emit(Oload, Kl, r1, r0, R);
+		emit(Oadd, Kl, r0, ap, c8);
+		return;
+	}
 
 	/* @b [...]
 	       r0 =l add ap, (0 or 4)
@@ -658,6 +741,7 @@ amd64_sysv_abi(Fn *fn)
 	Blk *b;
 	Ins *i, *i0;
 	RAlloc *ral;
+	Ref ldpad;
 	int n0, n1, ioff, fa;
 
 	for (b=fn->start; b; b=b->link)
@@ -678,6 +762,7 @@ amd64_sysv_abi(Fn *fn)
 
 	/* lower calls, returns, and vararg instructions */
 	ral = 0;
+	ldpad = R;
 	b = fn->start;
 	do {
 		if (!(b = b->link))
@@ -685,7 +770,7 @@ amd64_sysv_abi(Fn *fn)
 		if (b->visit)
 			continue;
 		curi = &insb[NIns];
-		selret(b, fn);
+		selret(b, fn, &ldpad, &ral);
 		for (i=&b->ins[b->nins]; i!=b->ins;)
 			switch ((--i)->op) {
 			default:
@@ -695,7 +780,7 @@ amd64_sysv_abi(Fn *fn)
 				for (i0=i; i0>b->ins; i0--)
 					if (!isarg((i0-1)->op))
 						break;
-				selcall(fn, i0, i, &ral);
+				selcall(fn, i0, i, &ral, &ldpad);
 				i = i0;
 				break;
 			case Ovastart:

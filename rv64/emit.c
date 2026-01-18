@@ -140,7 +140,7 @@ emitaddr(Con *c, FILE *f)
 static void
 emitf(char *s, Ins *i, Fn *fn, FILE *f)
 {
-	static char clschr[] = {'w', 'l', 's', 'd'};
+static char clschr[] = {'w', 'l', 's', 'd', 'e'};
 	Ref r;
 	int k, c;
 	Con *pc;
@@ -266,6 +266,8 @@ loadcon(Con *c, int r, int k, FILE *f)
 			n = (int32_t)n;
 		fprintf(f, "\tli %s, %"PRIi64"\n", rn, n);
 		break;
+	case CLd:
+		die("invalid constant");
 	default:
 		die("invalid constant");
 	}
@@ -320,7 +322,7 @@ emitins(Ins *i, Fn *fn, FILE *f)
 			 * search */
 			if (omap[o].op == NOp)
 				die("no match for %s(%c)",
-					optab[i->op].name, "wlsd"[i->cls]);
+					optab[i->op].name, "wlsde"[i->cls]);
 			if (omap[o].op == i->op)
 			if (omap[o].cls == i->cls || omap[o].cls == Ka
 			|| (omap[o].cls == Ki && KBASE(i->cls) == 0))

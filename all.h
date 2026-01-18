@@ -157,7 +157,7 @@ enum O {
 enum J {
 	Jxxx,
 #define JMPS(X)                                 \
-	X(retw)   X(retl)   X(rets)   X(retd)   \
+	X(retw)   X(retl)   X(rets)   X(retd)   X(rete) \
 	X(retsb)  X(retub)  X(retsh)  X(retuh)  \
 	X(retc)   X(ret0)   X(jmp)    X(jnz)    \
 	X(jfieq)  X(jfine)  X(jfisge) X(jfisgt) \
@@ -192,7 +192,7 @@ enum {
 };
 
 #define INRANGE(x, l, u) ((unsigned)(x) - l <= u - l) /* linear in x */
-#define isstore(o) INRANGE(o, Ostoreb, Ostored)
+#define isstore(o) INRANGE(o, Ostoreb, Ostoree)
 #define isload(o) INRANGE(o, Oloadsb, Oload)
 #define isalloc(o) INRANGE(o, Oalloc4, Oalloc16)
 #define isext(o) INRANGE(o, Oextsb, Oextuw)
@@ -209,15 +209,17 @@ enum {
 	Kw,
 	Kl,
 	Ks,
-	Kd
+	Kd,
+	Ke /* long double */
 };
 
-#define KWIDE(k) ((k)&1)
-#define KBASE(k) ((k)>>1)
+#define KWIDE(k) ((k)==Ke ? 1 : ((k)&1))
+#define KBASE(k) ((k)==Ke ? 1 : ((k)>>1))
+#define KSIZE(k) ((k)==Ke ? 16 : (KWIDE(k) ? 8 : 4))
 
 struct Op {
 	char *name;
-	short argcls[2][4];
+	short argcls[2][5];
 	uint canfold:1;
 	uint hasid:1;     /* op identity value? */
 	uint idval:1;     /* identity value 0/1 */
@@ -231,8 +233,8 @@ struct Op {
 };
 
 struct Ins {
-	uint op:30;
-	uint cls:2;
+	uint op:29;
+	uint cls:3;
 	Ref to;
 	Ref arg[2];
 };
@@ -366,14 +368,19 @@ struct Con {
 		CUndef,
 		CBits,
 		CAddr,
+		CLd,
 	} type;
 	Sym sym;
 	union {
 		int64_t i;
 		double d;
 		float s;
+		struct {
+			uint64_t lo;
+			uint64_t hi;
+		} ld;
 	} bits;
-	char flt; /* 1 to print as s, 2 to print as d */
+	char flt; /* 1 to print as s, 2 to print as d, 3 to print as e */
 };
 
 typedef struct Addr Addr;
@@ -432,6 +439,7 @@ struct Typ {
 			Fl,
 			Fs,
 			Fd,
+			Fe,
 			FPad,
 			FTyp,
 		} type;
@@ -447,6 +455,7 @@ struct Dat {
 		DH,
 		DW,
 		DL,
+		DE,
 		DZ
 	} type;
 	char *name;
@@ -455,6 +464,10 @@ struct Dat {
 		int64_t num;
 		double fltd;
 		float flts;
+		struct {
+			uint64_t lo;
+			uint64_t hi;
+		} ld;
 		char *str;
 		struct {
 			char *name;
@@ -623,6 +636,7 @@ void emitfnlnk(char *, Lnk *, FILE *);
 void emitdat(Dat *, FILE *);
 void emitdbgfile(char *, FILE *);
 void emitdbgloc(uint, uint, FILE *);
+int stashbytes(const void *, int);
 int stashbits(bits, int);
 void elf_emitfnfin(char *, FILE *);
 void elf_emitfin(FILE *);

@@ -326,6 +326,8 @@ loadcon(Con *c, int r, int k, E *e)
 		loadaddr(c, rn, e);
 		return;
 	}
+	if (c->type == CLd)
+		die("invalid constant");
 	assert(c->type == CBits);
 	if (!w)
 		n = (int32_t)n;
@@ -402,7 +404,7 @@ emitins(Ins *i, E *e)
 			 * search */
 			if (omap[o].op == NOp)
 				die("no match for %s(%c)",
-					optab[i->op].name, "wlsd"[i->cls]);
+					optab[i->op].name, "wlsde"[i->cls]);
 			if (omap[o].op == i->op)
 			if (omap[o].cls == i->cls || omap[o].cls == Ka
 			|| (omap[o].cls == Ki && KBASE(i->cls) == 0))

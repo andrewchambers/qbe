@@ -88,6 +88,7 @@ static struct {
 	{ Ostoreb,  Ka, "movb %B0, %M1" },
 	{ Ostores,  Ka, "movss %S0, %M1" },
 	{ Ostored,  Ka, "movsd %D0, %M1" },
+	{ Ostoree,  Ka, "movdqu %0, %M1" },
 	{ Oload,    Ka, "mov%k %M0, %=" },
 	{ Oloadsw,  Kl, "movslq %M0, %L=" },
 	{ Oloadsw,  Kw, "movl %M0, %W=" },
@@ -205,6 +206,8 @@ emitcon(Con *con, E *e)
 	case CBits:
 		fprintf(e->f, "%"PRId64, con->bits.i);
 		break;
+	case CLd:
+		die("long double constant must be materialized");
 	default:
 		die("unreachable");
 	}
@@ -255,7 +258,7 @@ emitcopy(Ref r1, Ref r2, int k, E *e)
 static void
 emitf(char *s, Ins *i, E *e)
 {
-	static char clstoa[][3] = {"l", "q", "ss", "sd"};
+static char clstoa[][4] = {"l", "q", "ss", "sd", "dqu"};
 	char c;
 	int sz;
 	Ref ref;
@@ -394,7 +397,7 @@ Next:
 	goto Next;
 }
 
-static bits negmask[4] = {
+static bits negmask[5] = {
 	[Ks] = 0x80000000,
 	[Kd] = 0x8000000000000000,
 };
@@ -422,7 +425,7 @@ emitins(Ins i, E *e)
 			 * search */
 			if (omap[o].op == NOp)
 				die("no match for %s(%c)",
-					optab[i.op].name, "wlsd"[i.cls]);
+					optab[i.op].name, "wlsde"[i.cls]);
 			if (omap[o].op == i.op)
 			if (omap[o].cls == i.cls
 			|| (omap[o].cls == Ki && KBASE(i.cls) == 0)
@@ -518,7 +521,8 @@ emitins(Ins i, E *e)
 		}
 		if (rtype(i.to) == RSlot
 		&& (t0 == RSlot || t0 == RMem)) {
-			i.cls = KWIDE(i.cls) ? Kd : Ks;
+			if (i.cls != Ke)
+				i.cls = KWIDE(i.cls) ? Kd : Ks;
 			i.arg[1] = TMP(XMM0+15);
 			emitf("mov%k %0, %1", &i, e);
 			emitf("mov%k %1, %=", &i, e);
@@ -549,6 +553,12 @@ emitins(Ins i, E *e)
 			break;
 		}
 		goto Table;
+	case Ofld:
+		emitf("fldt %M0", &i, e);
+		break;
+	case Ofstp:
+		emitf("fstpt %M0", &i, e);
+		break;
 	case Ocall:
 		/* calls simply have a weird syntax in AT&T
 		 * assembly... */

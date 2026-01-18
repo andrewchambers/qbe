@@ -479,10 +479,26 @@ newcon(Con *c0, Fn *fn)
 
 	for (i=1; i<fn->ncon; i++) {
 		c1 = &fn->con[i];
-		if (c0->type == c1->type
-		&& symeq(c0->sym, c1->sym)
-		&& c0->bits.i == c1->bits.i)
+		if (c0->type != c1->type)
+			continue;
+		switch (c0->type) {
+		case CUndef:
 			return CON(i);
+		case CAddr:
+			if (symeq(c0->sym, c1->sym)
+			&& c0->bits.i == c1->bits.i)
+				return CON(i);
+			break;
+		case CBits:
+			if (c0->bits.i == c1->bits.i)
+				return CON(i);
+			break;
+		case CLd:
+			if (c0->bits.ld.lo == c1->bits.ld.lo
+			&& c0->bits.ld.hi == c1->bits.ld.hi)
+				return CON(i);
+			break;
+		}
 	}
 	vgrow(&fn->con, ++fn->ncon);
 	fn->con[i] = *c0;
@@ -506,6 +522,8 @@ getcon(int64_t val, Fn *fn)
 int
 addcon(Con *c0, Con *c1, int m)
 {
+	if (c0->type == CLd || c1->type == CLd)
+		return 0;
 	if (m != 1 && c1->type == CAddr)
 		return 0;
 	if (c0->type == CUndef) {

@@ -61,15 +61,15 @@ emitfnlnk(char *n, Lnk *l, FILE *f)
 void
 emitdat(Dat *d, FILE *f)
 {
-	static struct {
-		char decl[8];
-		int64_t mask;
-	} di[] = {
-		[DB] = {"\t.byte", 0xffL},
-		[DH] = {"\t.short", 0xffffL},
-		[DW] = {"\t.int", 0xffffffffL},
-		[DL] = {"\t.quad", -1L},
-	};
+static struct {
+	char decl[8];
+	int64_t mask;
+} di[] = {
+	[DB] = {"\t.byte", 0xffL},
+	[DH] = {"\t.short", 0xffffL},
+	[DW] = {"\t.int", 0xffffffffL},
+	[DL] = {"\t.quad", -1L},
+};
 	static int64_t zero;
 	char *p;
 
@@ -98,6 +98,18 @@ emitdat(Dat *d, FILE *f)
 			zero += d->u.num;
 		else
 			fprintf(f, "\t.fill %"PRId64",1,0\n", d->u.num);
+		break;
+	case DE:
+		if (zero != -1) {
+			emitlnk(d->name, d->lnk, SecData, f);
+			if (zero > 0)
+				fprintf(f, "\t.fill %"PRId64",1,0\n", zero);
+			zero = -1;
+		}
+		if (d->isstr || d->isref)
+			err("unsupported initializer for 'e' data");
+		fprintf(f, "\t.quad %"PRId64"\n", (int64_t)d->u.ld.lo);
+		fprintf(f, "\t.quad %"PRId64"\n", (int64_t)d->u.ld.hi);
 		break;
 	default:
 		if (zero != -1) {
@@ -129,7 +141,7 @@ emitdat(Dat *d, FILE *f)
 typedef struct Asmbits Asmbits;
 
 struct Asmbits {
-	bits n;
+	uchar b[16];
 	int size;
 	Asmbits *link;
 };
@@ -137,21 +149,32 @@ struct Asmbits {
 static Asmbits *stash;
 
 int
-stashbits(bits n, int size)
+stashbytes(const void *p, int size)
 {
 	Asmbits **pb, *b;
 	int i;
 
 	assert(size == 4 || size == 8 || size == 16);
 	for (pb=&stash, i=0; (b=*pb); pb=&b->link, i++)
-		if (size <= b->size && b->n == n)
+		if (size <= b->size && memcmp(b->b, p, size) == 0)
 			return i;
 	b = emalloc(sizeof *b);
-	b->n = n;
 	b->size = size;
+	memset(b->b, 0, sizeof b->b);
+	memcpy(b->b, p, size);
 	b->link = 0;
 	*pb = b;
 	return i;
+}
+
+int
+stashbits(bits n, int size)
+{
+	uchar buf[16];
+
+	memset(buf, 0, sizeof buf);
+	memcpy(buf, &n, size == 4 ? 4 : 8);
+	return stashbytes(buf, size);
 }
 
 static void
@@ -160,6 +183,7 @@ emitfin(FILE *f, char *sec[3])
 	Asmbits *b;
 	int lg, i;
 	union { int32_t i; float f; } u;
+	uint64_t lo, hi;
 
 	if (!stash)
 		return;
@@ -173,19 +197,23 @@ emitfin(FILE *f, char *sec[3])
 					"%sfp%d:",
 					sec[lg-2], lg, T.asloc, i
 				);
-				if (lg == 4)
+				if (lg == 4) {
+					memcpy(&lo, b->b, 8);
+					memcpy(&hi, b->b+8, 8);
 					fprintf(f,
 						"\n\t.quad %"PRId64
-						"\n\t.quad 0\n\n",
-						(int64_t)b->n);
-				else if (lg == 3)
+						"\n\t.quad %"PRId64"\n\n",
+						(int64_t)lo, (int64_t)hi);
+				}
+				else if (lg == 3) {
+					memcpy(&lo, b->b, 8);
 					fprintf(f,
 						"\n\t.quad %"PRId64
 						" /* %f */\n\n",
-						(int64_t)b->n,
-						*(double *)&b->n);
+						(int64_t)lo, *(double *)&lo);
+				}
 				else if (lg == 2) {
-					u.i = b->n;
+					memcpy(&u.i, b->b, 4);
 					fprintf(f,
 						"\n\t.int %"PRId32
 						" /* %f */\n\n",

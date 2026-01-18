@@ -100,6 +100,7 @@ static int ntmp;  /* current # of temps (for limit) */
 static int locs;  /* stack size used by locals */
 static int slot4; /* next slot of 4 bytes */
 static int slot8; /* ditto, 8 bytes */
+static int slot16; /* ditto, 16 bytes */
 static BSet mask[2][1]; /* class masks */
 
 static int
@@ -136,7 +137,20 @@ slot(int t)
 		 *
 		 * invariant: slot4 <= slot8
 		 */
-		if (KWIDE(tmp[t].cls)) {
+		if (tmp[t].cls == Ke) {
+			s = slot16;
+			if (s < slot4)
+				s = slot4;
+			if (s < slot8)
+				s = slot8;
+			if (s & 3)
+				s = (s + 3) & -4;
+			slot16 = s + 4;
+			if (slot4 < slot16)
+				slot4 = slot16;
+			if (slot8 < slot16)
+				slot8 = slot16;
+		} else if (KWIDE(tmp[t].cls)) {
 			s = slot8;
 			if (slot4 == slot8)
 				slot4 += 2;
@@ -239,7 +253,10 @@ static void
 store(Ref r, int s)
 {
 	if (s != -1)
-		emit(Ostorew + tmp[r.val].cls, 0, R, r, SLOT(s));
+		if (tmp[r.val].cls == Ke)
+			emit(Ostoree, 0, R, r, SLOT(s));
+		else
+			emit(Ostorew + tmp[r.val].cls, 0, R, r, SLOT(s));
 }
 
 static int
@@ -344,6 +361,7 @@ spill(Fn *fn)
 	locs = fn->slot;
 	slot4 = 0;
 	slot8 = 0;
+	slot16 = 0;
 	for (t=0; t<ntmp; t++) {
 		k = 0;
 		if (t >= T.fpr0 && t < T.fpr0 + T.nfpr)

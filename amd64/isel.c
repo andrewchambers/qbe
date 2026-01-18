@@ -38,6 +38,8 @@ noimm(Ref r, Fn *fn)
 	case CBits:
 		val = fn->con[r.val].bits.i;
 		return (val < INT32_MIN || val > INT32_MAX);
+	case CLd:
+		die("invalid constant");
 	default:
 		die("invalid constant");
 	}
@@ -78,7 +80,24 @@ fixarg(Ref *r, int k, Ins *i, Fn *fn)
 	r1 = r0 = *r;
 	s = rslot(r0, fn);
 	op = i ? i->op : Ocopy;
-	if (KBASE(k) == 1 && rtype(r0) == RCon) {
+	if (k == Ke && rtype(r0) == RCon) {
+		/* load long doubles from memory slots */
+		uchar bits[16];
+		char lab[32];
+		r1 = MEM(fn->nmem);
+		vgrow(&fn->mem, ++fn->nmem);
+		memset(&a, 0, sizeof a);
+		c = &fn->con[r0.val];
+		if (c->type != CLd)
+			err("invalid long double constant");
+		memcpy(bits, &c->bits.ld, 16);
+		a.offset.type = CAddr;
+		n = stashbytes(bits, 16);
+		sprintf(lab, "\"%sfp%d\"", T.asloc, n);
+		a.offset.sym.id = intern(lab);
+		fn->mem[fn->nmem-1] = a;
+	}
+	else if (KBASE(k) == 1 && rtype(r0) == RCon) {
 		/* load floating points from memory
 		 * slots, they can't be used as
 		 * immediates
@@ -399,6 +418,22 @@ sel(Ins i, Num *tn, Fn *fn)
 	case Ostorew:
 	case Ostoreh:
 	case Ostoreb:
+	case Ostoree:
+		if (i.op == Ostoree && rtype(i.arg[0]) == RCon) {
+			Ref t, c;
+			c = i.arg[0];
+			t = newtmp("isel", Ke, fn);
+			i.arg[0] = t;
+			seladdr(&i.arg[1], tn, fn);
+			emiti(i);
+			i1 = curi;
+			fixarg(&i1->arg[0], argcls(&i, 0), i1, fn);
+			fixarg(&i1->arg[1], argcls(&i, 1), i1, fn);
+			emit(Ocopy, Ke, t, c, R);
+			i1 = curi;
+			fixarg(&i1->arg[0], Ke, i1, fn);
+			break;
+		}
 		if (rtype(i.arg[0]) == RCon) {
 			if (i.op == Ostored)
 				i.op = Ostorel;
@@ -407,10 +442,12 @@ sel(Ins i, Num *tn, Fn *fn)
 		}
 		seladdr(&i.arg[1], tn, fn);
 		goto Emit;
-	case_Oload:
-		seladdr(&i.arg[0], tn, fn);
-		goto Emit;
-	case Odbgloc:
+case Ofld:
+case Ofstp:
+case_Oload:
+	seladdr(&i.arg[0], tn, fn);
+	goto Emit;
+case Odbgloc:
 	case Ocall:
 	case Osalloc:
 	case Ocopy:

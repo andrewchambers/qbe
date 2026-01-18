@@ -127,7 +127,7 @@ exactly one of two consecutive tokens is a symbol (for example
 ~~~~~~~~~~~~~~
 
     `bnf
-    BASETY := 'w' | 'l' | 's' | 'd' # Base types
+    BASETY := 'w' | 'l' | 's' | 'd' | 'e' # Base types
     EXTTY  := BASETY | 'b' | 'h'    # Extended types
 
 The IL makes minimal use of types.  By design, the types
@@ -136,9 +136,12 @@ compilation to machine code and C interfacing.  Unlike LLVM,
 QBE is not using types as a means to safety; they are only
 here for semantic purposes.
 
-The four base types are `w` (word), `l` (long), `s` (single),
-and `d` (double), they stand respectively for 32-bit and
-64-bit integers, and 32-bit and 64-bit floating-point numbers.
+The base types are `w` (word), `l` (long), `s` (single),
+`d` (double), and `e` (long double).  They stand respectively
+for 32-bit and 64-bit integers, 32-bit and 64-bit floating-point
+numbers, and a target-defined long double type.  On amd64_sysv,
+`e` is the 80-bit extended-precision format stored in 16 bytes
+and passed/returned following the platform ABI.
 There are no pointer types available; pointers are typed
 by an integer type sufficiently wide to represent all memory
 addresses (e.g., `l` on 64-bit architectures).  Temporaries
@@ -176,6 +179,7 @@ by zero-extension, or by sign-extension.
         ['-'] NUMBER  # Decimal integer
       | 's_' FP       # Single-precision float
       | 'd_' FP       # Double-precision float
+      | 'e_' FP       # Long double
       | $IDENT        # Global symbol
 
     DYNCONST :=
@@ -704,6 +708,7 @@ towards zero.
   * Store instructions.
 
       * `stored` -- `(d,m)`
+      * `storee` -- `(e,m)`
       * `stores` -- `(s,m)`
       * `storel` -- `(l,m)`
       * `storew` -- `(w,m)`
@@ -892,6 +897,9 @@ into a floating point of the same width and vice versa.
 
   * `cast` -- `wlsd(sdwl)`
   * `copy` -- `T(T)`
+
+Long double (`e`) values are currently supported only for ABI
+interoperability (calls, returns, loads/stores, and `vaarg`).
 
 Casts can be used to make bitwise operations on the
 representation of floating point numbers.  For example
@@ -1095,6 +1103,7 @@ instructions unless you know exactly what you are doing.
       * `alloc8`
       * `blit`
       * `loadd`
+      * `loade`
       * `loadl`
       * `loads`
       * `loadsb`
@@ -1106,6 +1115,7 @@ instructions unless you know exactly what you are doing.
       * `loadw`
       * `storeb`
       * `stored`
+      * `storee`
       * `storeh`
       * `storel`
       * `stores`

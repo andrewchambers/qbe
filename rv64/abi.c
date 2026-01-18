@@ -36,6 +36,22 @@ struct Params {
 	int stk; /* stack offset for varargs */
 };
 
+static int
+hasld(Typ *t)
+{
+	Field *f;
+	uint n;
+
+	for (n=0; n<t->nunion; n++)
+		for (f=t->fields[n]; f->type != FEnd; f++) {
+			if (f->type == Fe)
+				return 1;
+			if (f->type == FTyp && hasld(&typ[f->len]))
+				return 1;
+		}
+	return 0;
+}
+
 static int gpreg[10] = {A0, A1, A2, A3, A4, A5, A6, A7};
 static int fpreg[10] = {FA0, FA1, FA2, FA3, FA4, FA5, FA6, FA7};
 
@@ -139,6 +155,9 @@ typclass(Class *c, Typ *t, int fpabi, int *gp, int *fp)
 	c->class = 0;
 	c->ngp = 0;
 	c->nfp = 0;
+
+	if (hasld(t))
+		err("long double not supported on rv64");
 
 	if (t->align > 4)
 		err("alignments larger than 16 are not supported");
@@ -591,6 +610,11 @@ rv64_abi(Fn *fn)
 	Insl *il;
 	int n0, n1, ioff;
 	Params p;
+	int t;
+
+	for (t=0; t<fn->ntmp; t++)
+		if (fn->tmp[t].cls == Ke)
+			err("long double not supported on rv64");
 
 	for (b=fn->start; b; b=b->link)
 		b->visit = 0;

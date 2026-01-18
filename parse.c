@@ -1,16 +1,17 @@
 #include "all.h"
 #include <ctype.h>
+#include <float.h>
 #include <stdarg.h>
 
 enum {
-	Ksb = 4, /* matches Oarg/Opar/Jret */
+	Ksb = 5, /* matches Oarg/Opar/Jret */
 	Kub,
 	Ksh,
 	Kuh,
 	Kc,
 	K0,
 
-	Ke = -2, /* erroneous mode */
+	KE = -2, /* erroneous mode */
 	Km = Kl, /* memory pointer */
 };
 
@@ -44,6 +45,7 @@ enum Token {
 	Tloadl,
 	Tloads,
 	Tloadd,
+	Tloade,
 	Talloc1,
 	Talloc2,
 
@@ -73,12 +75,14 @@ enum Token {
 	Tub,
 	Tb,
 	Td,
+	Te,
 	Ts,
 	Tz,
 
 	Tint,
 	Tflts,
 	Tfltd,
+	Tflte,
 	Ttmp,
 	Tlbl,
 	Tglo,
@@ -104,6 +108,7 @@ static char *kwmap[Ntok] = {
 	[Tloadl] = "loadl",
 	[Tloads] = "loads",
 	[Tloadd] = "loadd",
+	[Tloade] = "loade",
 	[Talloc1] = "alloc1",
 	[Talloc2] = "alloc2",
 	[Tblit] = "blit",
@@ -133,6 +138,7 @@ static char *kwmap[Ntok] = {
 	[Tl] = "l",
 	[Ts] = "s",
 	[Td] = "d",
+	[Te] = "e",
 	[Tz] = "z",
 	[Tdots] = "...",
 };
@@ -143,7 +149,7 @@ enum {
 	TMask = 16383, /* for temps hash */
 	BMask = 8191, /* for blocks hash */
 
-	K = 11183273, /* found using tools/lexh.c */
+	K = 20298703, /* found using tools/lexh.c */
 	M = 23,
 };
 
@@ -154,6 +160,7 @@ static int thead;
 static struct {
 	char chr;
 	double fltd;
+	long double flte;
 	float flts;
 	int64_t num;
 	char *str;
@@ -182,6 +189,28 @@ err(char *s, ...)
 	fprintf(stderr, "\n");
 	va_end(ap);
 	exit(1);
+}
+
+static void
+ldencode(uint64_t out[2], long double v)
+{
+	uchar buf[16];
+
+#if LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
+	memset(buf, 0, sizeof buf);
+	memcpy(buf, &v, sizeof v);
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+	if (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__)
+		err("long double constants require little-endian host");
+#endif
+	/* canonicalize padding for 80-bit extended format */
+	if (sizeof(long double) >= 10)
+		memset(buf + 10, 0, 6);
+	memcpy(out, buf, 16);
+#else
+	(void)v;
+	err("long double constants unsupported on this host");
+#endif
 }
 
 static void
@@ -264,6 +293,10 @@ lex()
 		if (fscanf(inf, "_%lf", &tokval.fltd) != 1)
 			break;
 		return Tfltd;
+	case 'e':
+		if (fscanf(inf, "_%Lf", &tokval.flte) != 1)
+			break;
+		return Tflte;
 	case '%':
 		t = Ttmp;
 		c = fgetc(inf);
@@ -445,6 +478,15 @@ parseref()
 		c.bits.d = tokval.fltd;
 		c.flt = 2;
 		break;
+	case Tflte: {
+		uint64_t ld[2];
+		ldencode(ld, tokval.flte);
+		c.type = CLd;
+		c.bits.ld.lo = ld[0];
+		c.bits.ld.hi = ld[1];
+		c.flt = 3;
+		break;
+	}
 	case Tthread:
 		c.sym.type = SThr;
 		expect(Tglo);
@@ -491,6 +533,8 @@ parsecls(int *tyn)
 		return Ks;
 	case Td:
 		return Kd;
+	case Te:
+		return Ke;
 	}
 }
 
@@ -714,14 +758,14 @@ parseline(PState ps)
 	}
 	if (op == Tloadw)
 		op = Oloadsw;
-	if (op >= Tloadl && op <= Tloadd)
+	if (op >= Tloadl && op <= Tloade)
 		op = Oload;
 	if (op == Talloc1 || op == Talloc2)
 		op = Oalloc;
 	if (op == Ovastart && !curf->vararg)
 		err("cannot use vastart in non-variadic function");
 	if (k >= Ksb)
-		err("size class must be w, l, s, or d");
+		err("size class must be w, l, s, d, or e");
 	i = 0;
 	if (peek() != Tnl)
 		for (;;) {
@@ -852,7 +896,7 @@ typecheck(Fn *fn)
 				k = optab[i->op].argcls[n][i->cls];
 				r = i->arg[n];
 				t = &fn->tmp[r.val];
-				if (k == Ke)
+				if (k == KE)
 					err("invalid instruction type in %s",
 						optab[i->op].name);
 				if (rtype(r) == RType)
@@ -965,6 +1009,7 @@ parsefields(Field *fld, Typ *ty, int t)
 		switch (t) {
 		default: err("invalid type member specifier");
 		case Td: type = Fd; s = 8; a = 3; break;
+		case Te: type = Fe; s = 16; a = 4; break;
 		case Tl: type = Fl; s = 8; a = 3; break;
 		case Ts: type = Fs; s = 4; a = 2; break;
 		case Tw: type = Fw; s = 4; a = 2; break;
@@ -1130,6 +1175,7 @@ parsedat(void cb(Dat *), Lnk *lnk)
 		default: err("invalid size specifier %c in data", tokval.chr);
 		case Trbrace: goto Done;
 		case Tl: d.type = DL; break;
+		case Te: d.type = DE; break;
 		case Tw: d.type = DW; break;
 		case Th: d.type = DH; break;
 		case Tb: d.type = DB; break;
@@ -1142,12 +1188,31 @@ parsedat(void cb(Dat *), Lnk *lnk)
 			d.isstr = 0;
 			d.isref = 0;
 			memset(&d.u, 0, sizeof d.u);
-			if (t == Tflts)
+			if (t == Tflts) {
+				if (d.type == DE)
+					err("expected e_ literal for 'e' data");
 				d.u.flts = tokval.flts;
-			else if (t == Tfltd)
+			}
+			else if (t == Tfltd) {
+				if (d.type == DE)
+					err("expected e_ literal for 'e' data");
 				d.u.fltd = tokval.fltd;
-			else if (t == Tint)
-				d.u.num = tokval.num;
+			}
+			else if (t == Tflte) {
+				uint64_t ld[2];
+				if (d.type != DE)
+					err("long double literal only valid with 'e' data");
+				ldencode(ld, tokval.flte);
+				d.u.ld.lo = ld[0];
+				d.u.ld.hi = ld[1];
+			}
+			else if (t == Tint) {
+				if (d.type == DE) {
+					d.u.ld.lo = (uint64_t)tokval.num;
+					d.u.ld.hi = 0;
+				} else
+					d.u.num = tokval.num;
+			}
 			else if (t == Tglo)
 				parsedatref(&d);
 			else if (t == Tstr)
@@ -1156,7 +1221,7 @@ parsedat(void cb(Dat *), Lnk *lnk)
 				err("constant literal expected");
 			cb(&d);
 			t = nextnl();
-		} while (t == Tint || t == Tflts || t == Tfltd || t == Tstr || t == Tglo);
+		} while (t == Tint || t == Tflts || t == Tfltd || t == Tflte || t == Tstr || t == Tglo);
 		if (t == Trbrace)
 			break;
 		if (t != Tcomma)
@@ -1266,6 +1331,19 @@ printcon(Con *c, FILE *f)
 		else
 			fprintf(f, "%"PRIi64, c->bits.i);
 		break;
+	case CLd: {
+		long double v = 0;
+		uchar buf[16];
+		memset(buf, 0, sizeof buf);
+		memcpy(buf, &c->bits.ld, 16);
+		memcpy(&v, buf, sizeof v);
+#if LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
+		fprintf(f, "e_%Lg", v);
+#else
+		fprintf(f, "e_0");
+#endif
+		break;
+	}
 	}
 }
 
@@ -1331,7 +1409,7 @@ printref(Ref r, Fn *fn, FILE *f)
 void
 printfn(Fn *fn, FILE *f)
 {
-	static char ktoc[] = "wlsd";
+	static char ktoc[] = "wlsde";
 	static char *jtoa[NJmp] = {
 	#define X(j) [J##j] = #j,
 		JMPS(X)

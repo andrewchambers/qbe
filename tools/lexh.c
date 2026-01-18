@@ -10,7 +10,7 @@ char *tok[] = {
 
 	"add", "sub", "neg", "div", "rem", "udiv", "urem", "mul",
 	"and", "or", "xor", "sar", "shr", "shl", "stored",
-	"stores", "storel", "storew", "storeh", "storeb",
+	"stores", "storee", "storel", "storew", "storeh", "storeb",
 	"load", "loadsw", "loaduw", "loadsh", "loaduh",
 	"loadsb", "loadub", "extsw", "extuw", "extsh",
 	"extuh", "extsb", "extub", "exts", "truncd",
@@ -28,7 +28,7 @@ char *tok[] = {
 	"call", "phi", "jmp", "jnz", "ret", "hlt", "export",
 	"function", "type", "data", "section", "align", "dbgfile",
 	"blit", "l", "w", "sh", "uh", "h", "sb", "ub", "b",
-	"d", "s", "z", "loadw", "loadl", "loads", "loadd",
+	"d", "e", "s", "z", "loadw", "loadl", "loads", "loadd", "loade",
 	"alloc1", "alloc2", "thread", "common",
 
 };

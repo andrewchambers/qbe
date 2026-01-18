@@ -49,7 +49,7 @@ loadsz(Ins *l)
 	case Oloadsb: case Oloadub: return 1;
 	case Oloadsh: case Oloaduh: return 2;
 	case Oloadsw: case Oloaduw: return 4;
-	case Oload: return KWIDE(l->cls) ? 8 : 4;
+	case Oload: return KSIZE(l->cls);
 	}
 	die("unreachable");
 }
@@ -62,6 +62,7 @@ storesz(Ins *s)
 	case Ostoreh: return 2;
 	case Ostorew: case Ostores: return 4;
 	case Ostorel: case Ostored: return 8;
+	case Ostoree: return 16;
 	}
 	die("unreachable");
 }
@@ -419,6 +420,12 @@ loadopt(Fn *fn)
 	Insert *ist;
 	Slice sl;
 	Loc l;
+
+	for (b=fn->start; b; b=b->link)
+		for (i=b->ins; i<&b->ins[b->nins]; ++i)
+			if (i->cls == Ke || i->op == Ostoree
+			|| i->op == Ofld || i->op == Ofstp)
+				return;
 
 	curf = fn;
 	ilog = vnew(0, sizeof ilog[0], PHeap);
